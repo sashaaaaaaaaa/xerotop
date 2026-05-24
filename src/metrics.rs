@@ -202,24 +202,20 @@ pub fn toggle_mute() {
     let _ = selem.set_playback_switch_all(i32::from(on == 0));
 }
 
-/// Adjust backlight by `delta_pct`. Writes /sys directly (needs `video`-group /
-/// udev write access; otherwise a no-op).
+/// Adjust backlight by `delta_pct` via brightnessctl (the /sys node is
+/// root-owned, so a direct write fails; brightnessctl handles perms via
+/// logind/udev). One-shot on a user scroll — not polled.
 pub fn add_brightness(delta_pct: f64) {
-    let Some(dir) = fs::read_dir("/sys/class/backlight")
-        .ok()
-        .and_then(|mut e| e.next())
-        .and_then(|e| e.ok())
-        .map(|e| e.path())
-    else {
-        return;
+    let step = delta_pct.abs().round() as i64;
+    let arg = if delta_pct >= 0.0 {
+        format!("{step}%+")
+    } else {
+        format!("{step}%-")
     };
-    let max = read_u64(&dir.join("max_brightness")) as f64;
-    let cur = read_u64(&dir.join("brightness")) as f64;
-    if max <= 0.0 {
-        return;
-    }
-    let new = (cur + delta_pct / 100.0 * max).clamp(0.0, max).round() as u64;
-    let _ = fs::write(dir.join("brightness"), new.to_string());
+    let _ = std::process::Command::new("brightnessctl")
+        .arg("set")
+        .arg(arg)
+        .spawn();
 }
 
 /// (busy %, vram used GB, vram total GB) from the first GPU exposing busy %.
