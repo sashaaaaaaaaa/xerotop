@@ -75,14 +75,16 @@ fn default_true() -> bool {
 }
 
 fn default_panels() -> Vec<PanelConfig> {
-    ["clock", "cpu", "mem", "temp", "net", "bat"]
-        .iter()
-        .map(|k| PanelConfig {
-            kind: (*k).to_string(),
-            interval: 1,
-            graph: true,
-        })
-        .collect()
+    [
+        "clock", "cpu", "mem", "gpu", "disk", "net", "temp", "bat", "vol", "bri",
+    ]
+    .iter()
+    .map(|k| PanelConfig {
+        kind: (*k).to_string(),
+        interval: 1,
+        graph: true,
+    })
+    .collect()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,8 +158,13 @@ interval = 2
 graph = true
 
 [[panel]]
-type = "temp"
-interval = 5
+type = "gpu"
+interval = 2
+graph = true
+
+[[panel]]
+type = "disk"
+interval = 2
 graph = true
 
 [[panel]]
@@ -166,7 +173,19 @@ interval = 1
 graph = true
 
 [[panel]]
+type = "temp"
+interval = 5
+graph = true
+
+[[panel]]
 type = "bat"
 interval = 10
-graph = false
+
+[[panel]]
+type = "vol"
+interval = 2
+
+[[panel]]
+type = "bri"
+interval = 2
 "#;
