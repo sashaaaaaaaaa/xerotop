@@ -1,0 +1,10 @@
+[package]
+name = "xerotop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gtk = { version = "0.10", package = "gtk4" }
+gtk4-layer-shell = "0.6"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.1.2"

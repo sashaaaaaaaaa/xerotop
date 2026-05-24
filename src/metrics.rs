@@ -1,0 +1,115 @@
+//! Native metric samplers. All read /proc or /sys directly — no subprocesses,
+//! which is the whole point (the ewwii version forked ~600 shells/sec).
+
+use std::fs;
+use std::time::Instant;
+
+/// CPU busy percentage, computed from deltas of /proc/stat.
+pub struct Cpu {
+    prev: (u64, u64), // (idle, total)
+}
+
+impl Cpu {
+    pub fn new() -> Self {
+        Self { prev: Self::raw() }
+    }
+
+    fn raw() -> (u64, u64) {
+        let stat = fs::read_to_string("/proc/stat").unwrap_or_default();
+        let line = stat.lines().next().unwrap_or("");
+        let vals: Vec<u64> = line
+            .split_whitespace()
+            .skip(1)
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        // user nice system idle iowait irq softirq steal ...
+        let idle = vals.get(3).copied().unwrap_or(0) + vals.get(4).copied().unwrap_or(0);
+        let total: u64 = vals.iter().sum();
+        (idle, total)
+    }
+
+    /// Busy % since last call, 0..=100.
+    pub fn sample(&mut self) -> f64 {
+        let (idle, total) = Self::raw();
+        let di = idle.saturating_sub(self.prev.0) as f64;
+        let dt = total.saturating_sub(self.prev.1) as f64;
+        self.prev = (idle, total);
+        if dt > 0.0 {
+            ((1.0 - di / dt) * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Used-memory percentage from /proc/meminfo.
+pub fn mem_percent() -> f64 {
+    let info = fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let mut total: f64 = 0.0;
+    let mut avail: f64 = 0.0;
+    for line in info.lines() {
+        let mut it = line.split_whitespace();
+        match it.next() {
+            Some("MemTotal:") => total = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            Some("MemAvailable:") => avail = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            _ => {}
+        }
+    }
+    if total > 0.0 {
+        ((1.0 - avail / total) * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+}
+
+/// Network throughput in KB/s, summed across non-loopback interfaces.
+pub struct Net {
+    prev: (u64, u64), // (rx, tx) bytes
+    at: Instant,
+}
+
+impl Net {
+    pub fn new() -> Self {
+        Self {
+            prev: Self::raw(),
+            at: Instant::now(),
+        }
+    }
+
+    fn raw() -> (u64, u64) {
+        let dev = fs::read_to_string("/proc/net/dev").unwrap_or_default();
+        let mut rx = 0u64;
+        let mut tx = 0u64;
+        for line in dev.lines().skip(2) {
+            let Some((iface, rest)) = line.split_once(':') else {
+                continue;
+            };
+            if iface.trim() == "lo" {
+                continue;
+            }
+            let cols: Vec<u64> = rest
+                .split_whitespace()
+                .filter_map(|v| v.parse().ok())
+                .collect();
+            // rx bytes = col 0, tx bytes = col 8
+            rx += cols.first().copied().unwrap_or(0);
+            tx += cols.get(8).copied().unwrap_or(0);
+        }
+        (rx, tx)
+    }
+
+    /// (down, up) in KB/s since last call.
+    pub fn sample(&mut self) -> (f64, f64) {
+        let (rx, tx) = Self::raw();
+        let secs = self.at.elapsed().as_secs_f64();
+        let drx = rx.saturating_sub(self.prev.0) as f64;
+        let dtx = tx.saturating_sub(self.prev.1) as f64;
+        self.prev = (rx, tx);
+        self.at = Instant::now();
+        if secs > 0.0 {
+            (drx / 1024.0 / secs, dtx / 1024.0 / secs)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+}
