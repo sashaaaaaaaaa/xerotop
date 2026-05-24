@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub fn build(app: &Application, cfg: &Config) {
+    panels::set_gamma(cfg.bar.graph_gamma);
     let window = ApplicationWindow::builder().application(app).build();
 
     window.init_layer_shell();

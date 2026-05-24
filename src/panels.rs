@@ -31,6 +31,14 @@ const RED: Rgba = (1.0, 0.45, 0.40, 0.9);
 const VIOLET: Rgba = (0.78, 0.55, 1.0, 0.9);
 const PALE: Rgba = (0.70, 0.92, 1.0, 0.85); // MEM cache overlay line
 
+/// Gamma for autoscaled graphs (cpu/gpu/net/disk), set once from config.
+static AUTOSCALE_GAMMA: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+
+/// Set the autoscaled-graph gamma. Call before building panels.
+pub fn set_gamma(g: f64) {
+    let _ = AUTOSCALE_GAMMA.set(g);
+}
+
 /// Build a panel from its config, or None for an unknown type.
 pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel> {
     let iv = cfg.interval.max(0.1);
@@ -178,7 +186,11 @@ fn graph_widget(
         // Autoscaled graphs (cpu/gpu/net/disk) use gamma > 1 to deepen valleys
         // and sharpen peaks (ewwii-like spikiness); fixed-scale meters (mem/temp)
         // stay linear so the fill reflects the true level.
-        let gamma = if fixed.is_some() { 1.0 } else { 1.6 };
+        let gamma = if fixed.is_some() {
+            1.0
+        } else {
+            *AUTOSCALE_GAMMA.get().unwrap_or(&1.4)
+        };
         let g = Graph::new(GRAPH_W, h, fixed, gamma, specs, iv, smooth);
         root.append(&g.area);
         g

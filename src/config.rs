@@ -32,6 +32,9 @@ pub struct BarConfig {
     pub monitor: i32,
     /// Continuous graph scrolling (smoother, but redraws per frame). Off = stepped.
     pub smooth: bool,
+    /// Spikiness of autoscaled graphs (cpu/gpu/net/disk): >1 sharpens peaks and
+    /// deepens valleys, 1.0 = linear. Fixed meters (mem/temp) ignore this.
+    pub graph_gamma: f64,
 }
 
 impl Default for BarConfig {
@@ -41,6 +44,7 @@ impl Default for BarConfig {
             thickness: 150,
             monitor: 0,
             smooth: true,
+            graph_gamma: 1.4,
         }
     }
 }
@@ -187,6 +191,7 @@ edge = "right"      # left | right | top | bottom  (left/right = vertical bar)
 thickness = 150     # px: width for vertical bars, height for horizontal
 monitor = 0
 smooth = true       # continuous graph scrolling; false = stepped (less battery)
+graph_gamma = 1.4   # autoscaled-graph spikiness; >1 sharper peaks, 1.0 = linear
 
 [power]
 # On battery, multiply every panel's update interval by this (saves wakeups).
