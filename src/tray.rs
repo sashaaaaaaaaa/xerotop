@@ -1,11 +1,20 @@
 //! System tray via StatusNotifier (the `system-tray` crate, same host
 //! `wlr-trayd` used). A dedicated thread runs a tokio runtime + the tray host,
-//! streams item snapshots to GTK, and takes left-click activate requests back.
-//! Right-click DBus menus are a planned follow-up.
+//! streams item snapshots (incl. their DBus menu) to GTK, and takes click and
+//! menu-click requests back.
 
 use std::collections::HashMap;
 use system_tray::client::{ActivateRequest, Client, Event, UpdateEvent};
 use system_tray::item::{IconPixmap, StatusNotifierItem};
+use system_tray::menu::{MenuType, TrayMenu};
+
+#[derive(Clone)]
+pub struct MenuEntry {
+    pub id: i32,
+    pub label: String,
+    pub enabled: bool,
+    pub separator: bool,
+}
 
 #[derive(Clone, Default)]
 pub struct TrayItem {
@@ -14,11 +23,32 @@ pub struct TrayItem {
     pub icon_name: Option<String>,
     pub icon_theme_path: Option<String>,
     pub pixmap: Option<(i32, i32, Vec<u8>)>, // (w, h, ARGB32)
+    pub menu_path: Option<String>,
+    pub menu: Vec<MenuEntry>,
+}
+
+/// Requests sent from the GTK thread back to the tray host.
+pub enum TrayAction {
+    Activate(String),               // address (left-click)
+    MenuClick(String, String, i32), // address, menu_path, submenu_id
 }
 
 fn best_pixmap(pix: Option<&Vec<IconPixmap>>) -> Option<(i32, i32, Vec<u8>)> {
     let p = pix?.iter().max_by_key(|p| p.width * p.height)?;
     Some((p.width, p.height, p.pixels.clone()))
+}
+
+fn flatten(menu: &TrayMenu) -> Vec<MenuEntry> {
+    menu.submenus
+        .iter()
+        .filter(|m| m.visible)
+        .map(|m| MenuEntry {
+            id: m.id,
+            label: m.label.clone().unwrap_or_default(),
+            enabled: m.enabled,
+            separator: matches!(m.menu_type, MenuType::Separator),
+        })
+        .collect()
 }
 
 fn to_item(addr: &str, item: &StatusNotifierItem) -> TrayItem {
@@ -28,6 +58,8 @@ fn to_item(addr: &str, item: &StatusNotifierItem) -> TrayItem {
         icon_name: item.icon_name.clone().filter(|s| !s.is_empty()),
         icon_theme_path: item.icon_theme_path.clone(),
         pixmap: best_pixmap(item.icon_pixmap.as_ref()),
+        menu_path: item.menu.clone(),
+        menu: Vec::new(),
     }
 }
 
@@ -37,13 +69,13 @@ fn snapshot(items: &HashMap<String, TrayItem>) -> Vec<TrayItem> {
     v
 }
 
-/// Spawn the tray host thread; returns (snapshot receiver, activate sender).
+/// Spawn the tray host thread; returns (snapshot receiver, action sender).
 pub fn spawn() -> (
     async_channel::Receiver<Vec<TrayItem>>,
-    async_channel::Sender<String>,
+    async_channel::Sender<TrayAction>,
 ) {
     let (tx, rx) = async_channel::unbounded();
-    let (atx, arx) = async_channel::unbounded::<String>();
+    let (atx, arx) = async_channel::unbounded::<TrayAction>();
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -66,18 +98,21 @@ pub fn spawn() -> (
 
 async fn run(
     tx: async_channel::Sender<Vec<TrayItem>>,
-    arx: async_channel::Receiver<String>,
+    arx: async_channel::Receiver<TrayAction>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new().await?;
     let mut sub = client.subscribe();
     let mut items: HashMap<String, TrayItem> = HashMap::new();
 
-    // seed with anything already registered
     {
         let initial = client.items();
         if let Ok(guard) = initial.lock() {
-            for (addr, (item, _menu)) in guard.iter() {
-                items.insert(addr.clone(), to_item(addr, item));
+            for (addr, (item, menu)) in guard.iter() {
+                let mut it = to_item(addr, item);
+                if let Some(m) = menu {
+                    it.menu = flatten(m);
+                }
+                items.insert(addr.clone(), it);
             }
         }
     }
@@ -98,6 +133,7 @@ async fn run(
                                     it.pixmap = best_pixmap(icon_pixmap.as_ref());
                                 }
                                 UpdateEvent::Title(t) => it.title = t.unwrap_or_default(),
+                                UpdateEvent::Menu(menu) => it.menu = flatten(&menu),
                                 _ => {}
                             }
                         }
@@ -110,9 +146,14 @@ async fn run(
             }
             req = arx.recv() => {
                 match req {
-                    Ok(address) => {
+                    Ok(TrayAction::Activate(address)) => {
                         let _ = client
                             .activate(ActivateRequest::Default { address, x: 0, y: 0 })
+                            .await;
+                    }
+                    Ok(TrayAction::MenuClick(address, menu_path, submenu_id)) => {
+                        let _ = client
+                            .activate(ActivateRequest::MenuItem { address, menu_path, submenu_id })
                             .await;
                     }
                     Err(_) => break,

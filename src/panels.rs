@@ -617,11 +617,67 @@ fn tray_panel() -> Panel {
                 btn.set_has_frame(false);
                 btn.set_tooltip_text(Some(&it.title));
                 btn.set_child(Some(&tray_image(&it)));
-                let atx = atx.clone();
-                let id = it.id.clone();
-                btn.connect_clicked(move |_| {
-                    let _ = atx.try_send(id.clone());
-                });
+
+                // left-click: activate
+                {
+                    let atx = atx.clone();
+                    let id = it.id.clone();
+                    btn.connect_clicked(move |_| {
+                        let _ = atx.try_send(crate::tray::TrayAction::Activate(id.clone()));
+                    });
+                }
+
+                // right-click: DBus menu popover
+                if it.menu_path.is_some() && !it.menu.is_empty() {
+                    let atx = atx.clone();
+                    let addr = it.id.clone();
+                    let menu_path = it.menu_path.clone().unwrap();
+                    let entries = it.menu.clone();
+                    let btn_weak = btn.downgrade();
+                    let gesture = gtk::GestureClick::new();
+                    gesture.set_button(3);
+                    gesture.connect_pressed(move |_, _, _, _| {
+                        let Some(anchor) = btn_weak.upgrade() else {
+                            return;
+                        };
+                        let pop = gtk::Popover::new();
+                        pop.set_position(gtk::PositionType::Left);
+                        let mbox = GtkBox::new(Orientation::Vertical, 1);
+                        mbox.add_css_class("menu");
+                        for e in &entries {
+                            if e.separator {
+                                let rule = GtkBox::new(Orientation::Horizontal, 0);
+                                rule.add_css_class("rule");
+                                rule.set_size_request(-1, 1);
+                                mbox.append(&rule);
+                                continue;
+                            }
+                            let mi = gtk::Button::with_label(&e.label);
+                            mi.add_css_class("menu-item");
+                            mi.set_sensitive(e.enabled);
+                            let atx = atx.clone();
+                            let addr = addr.clone();
+                            let mp = menu_path.clone();
+                            let id = e.id;
+                            let pop2 = pop.clone();
+                            mi.connect_clicked(move |_| {
+                                let _ = atx.try_send(crate::tray::TrayAction::MenuClick(
+                                    addr.clone(),
+                                    mp.clone(),
+                                    id,
+                                ));
+                                pop2.popdown();
+                            });
+                            mbox.append(&mi);
+                        }
+                        pop.set_child(Some(&mbox));
+                        pop.set_parent(&anchor);
+                        pop.connect_closed(|p| p.unparent());
+                        pop.popup();
+                    });
+                    btn.add_controller(gesture);
+                }
+
                 flow2.insert(&btn, -1);
             }
         }
