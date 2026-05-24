@@ -30,6 +30,8 @@ pub struct BarConfig {
     /// Bar thickness in px (width for vertical bars, height for horizontal).
     pub thickness: i32,
     pub monitor: i32,
+    /// Continuous graph scrolling (smoother, but redraws per frame). Off = stepped.
+    pub smooth: bool,
 }
 
 impl Default for BarConfig {
@@ -38,6 +40,7 @@ impl Default for BarConfig {
             edge: Edge::Right,
             thickness: 150,
             monitor: 0,
+            smooth: true,
         }
     }
 }
@@ -65,6 +68,11 @@ pub struct PanelConfig {
     pub interval: u32,
     #[serde(default = "default_true")]
     pub graph: bool,
+    /// clock only: strftime time/date formats (defaults give 12-hour AM/PM).
+    #[serde(default)]
+    pub time_format: Option<String>,
+    #[serde(default)]
+    pub date_format: Option<String>,
 }
 
 fn default_interval() -> u32 {
@@ -83,6 +91,8 @@ fn default_panels() -> Vec<PanelConfig> {
         kind: (*k).to_string(),
         interval: 1,
         graph: true,
+        time_format: None,
+        date_format: None,
     })
     .collect()
 }
@@ -137,6 +147,7 @@ pub const DEFAULT_TOML: &str = r#"# xerotop — system monitor config (TOML, sta
 edge = "right"      # left | right | top | bottom  (left/right = vertical bar)
 thickness = 150     # px: width for vertical bars, height for horizontal
 monitor = 0
+smooth = true       # continuous graph scrolling; false = stepped (less battery)
 
 [power]
 # On battery, multiply every panel's update interval by this (saves wakeups).
@@ -146,6 +157,8 @@ battery_interval_multiplier = 2.0
 [[panel]]
 type = "clock"
 interval = 1
+time_format = "%I:%M %p"   # 12-hour AM/PM; use "%H:%M" for 24-hour
+date_format = "%a %d %b"
 
 [[panel]]
 type = "cpu"

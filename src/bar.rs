@@ -71,7 +71,7 @@ pub fn build(app: &Application, cfg: &Config) {
 
     let mut panels: Vec<Panel> = Vec::new();
     for (i, pcfg) in cfg.panel.iter().enumerate() {
-        if let Some(panel) = panels::build(pcfg) {
+        if let Some(panel) = panels::build(pcfg, cfg.bar.smooth) {
             if i > 0 {
                 let rule = GtkBox::new(Orientation::Horizontal, 0);
                 rule.add_css_class("rule");

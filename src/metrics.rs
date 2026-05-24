@@ -50,24 +50,26 @@ impl Cpu {
     }
 }
 
-/// Used-memory percentage from /proc/meminfo.
-pub fn mem_percent() -> f64 {
+/// Memory breakdown from /proc/meminfo: (used%, cache%). "used" excludes
+/// reclaimable memory; "cache" = Buffers + Cached + SReclaimable.
+pub fn mem_detail() -> (f64, f64) {
     let info = fs::read_to_string("/proc/meminfo").unwrap_or_default();
-    let mut total: f64 = 0.0;
-    let mut avail: f64 = 0.0;
-    for line in info.lines() {
-        let mut it = line.split_whitespace();
-        match it.next() {
-            Some("MemTotal:") => total = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
-            Some("MemAvailable:") => avail = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
-            _ => {}
+    let field = |key: &str| -> f64 {
+        for line in info.lines() {
+            let mut it = line.split_whitespace();
+            if it.next() == Some(key) {
+                return it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            }
         }
-    }
-    if total > 0.0 {
-        ((1.0 - avail / total) * 100.0).clamp(0.0, 100.0)
-    } else {
         0.0
+    };
+    let total = field("MemTotal:");
+    if total <= 0.0 {
+        return (0.0, 0.0);
     }
+    let cache = field("Buffers:") + field("Cached:") + field("SReclaimable:");
+    let used = (total - field("MemFree:") - cache).max(0.0);
+    (used / total * 100.0, cache / total * 100.0)
 }
 
 /// CPU temperature in °C from the first preferred hwmon sensor.

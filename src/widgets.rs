@@ -1,67 +1,138 @@
-//! Reusable meters. Both redraw only on data push — never on a frame clock,
-//! which is the battery-first core.
+//! Reusable meters. `Graph` is a multi-series filled history chart with
+//! non-linear `gamma` (≈0.5 lifts low values, gkrellm/ewwii feel) and optional
+//! smooth horizontal scrolling (continuous "second-hand" motion vs 1 Hz ticks).
+//! `Bar` is a single-level fill.
 //!
-//! `Graph` is a filled history chart with a non-linear `gamma` (≈0.5 lifts low
-//! values so it stays lively like gkrellm/ewwii). `Bar` is a single-level fill
-//! (battery / volume / brightness).
+//! Series: the first/each `fill` series draws a translucent area + edge line;
+//! non-fill series draw a line only (e.g. MEM's used-vs-cache overlay).
 
 use gtk::DrawingArea;
 use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::time::Instant;
 
 pub type Rgba = (f64, f64, f64, f64);
+
+const HISTORY: usize = 64; // samples retained per series
+
+struct Series {
+    buf: VecDeque<f64>,
+    rgba: Rgba,
+    fill: bool,
+}
 
 #[derive(Clone)]
 pub struct Graph {
     pub area: DrawingArea,
-    data: Rc<RefCell<VecDeque<f64>>>,
+    series: Rc<RefCell<Vec<Series>>>,
+    last: Rc<Cell<Instant>>,
 }
 
 impl Graph {
-    /// `fixed_max` None = autoscale to the buffer. `gamma` < 1.0 emphasizes low
-    /// values (1.0 = linear).
-    pub fn new(len: usize, w: i32, h: i32, fixed_max: Option<f64>, gamma: f64, rgba: Rgba) -> Self {
+    /// `specs` = one `(color, fill?)` per series. `fixed_max` None = autoscale.
+    /// `smooth` adds a per-frame scroll between samples.
+    pub fn new(
+        w: i32,
+        h: i32,
+        fixed_max: Option<f64>,
+        gamma: f64,
+        specs: &[(Rgba, bool)],
+        interval_s: f64,
+        smooth: bool,
+    ) -> Self {
         let area = DrawingArea::new();
         area.add_css_class("graph");
         area.set_content_width(w);
         area.set_content_height(h);
-        let data = Rc::new(RefCell::new(VecDeque::from(vec![0.0; len])));
 
-        let d = data.clone();
-        let (r, g, b, a) = rgba;
+        let series: Vec<Series> = specs
+            .iter()
+            .map(|(rgba, fill)| Series {
+                buf: VecDeque::from(vec![0.0; HISTORY]),
+                rgba: *rgba,
+                fill: *fill,
+            })
+            .collect();
+        let series = Rc::new(RefCell::new(series));
+        let last = Rc::new(Cell::new(Instant::now()));
+        let frac = Rc::new(Cell::new(0.0_f64));
+
+        let s = series.clone();
+        let fr = frac.clone();
         area.set_draw_func(move |_, cr, w, h| {
             let (w, h) = (w as f64, h as f64);
-            let buf = d.borrow();
-            let n = buf.len().max(2) as f64;
+            let ss = s.borrow();
+            let Some(n) = ss.first().map(|se| se.buf.len()) else {
+                return;
+            };
+            if n < 3 {
+                return;
+            }
             let max = fixed_max
-                .unwrap_or_else(|| buf.iter().cloned().fold(1.0_f64, f64::max))
+                .unwrap_or_else(|| {
+                    ss.iter()
+                        .flat_map(|se| se.buf.iter().copied())
+                        .fold(1e-9, f64::max)
+                })
                 .max(1e-9);
             let yof = |v: f64| h - (v / max).clamp(0.0, 1.0).powf(gamma) * h;
+            let step = w / (n as f64 - 2.0);
+            let f = fr.get();
+            let xof = |i: usize| (i as f64 - f) * step;
 
-            cr.move_to(0.0, h);
-            for (i, v) in buf.iter().enumerate() {
-                cr.line_to(w * (i as f64) / (n - 1.0), yof(*v));
+            for se in ss.iter() {
+                let (r, g, b, a) = se.rgba;
+                if se.fill {
+                    cr.move_to(xof(0), h);
+                    for i in 0..n {
+                        cr.line_to(xof(i), yof(se.buf[i]));
+                    }
+                    cr.line_to(xof(n - 1), h);
+                    cr.close_path();
+                    cr.set_source_rgba(r, g, b, a * 0.35);
+                    let _ = cr.fill_preserve();
+                    cr.set_source_rgba(r, g, b, a);
+                    cr.set_line_width(1.0);
+                    let _ = cr.stroke();
+                } else {
+                    cr.move_to(xof(0), yof(se.buf[0]));
+                    for i in 1..n {
+                        cr.line_to(xof(i), yof(se.buf[i]));
+                    }
+                    cr.set_source_rgba(r, g, b, a);
+                    cr.set_line_width(1.0);
+                    let _ = cr.stroke();
+                }
             }
-            cr.line_to(w, h);
-            cr.close_path();
-            cr.set_source_rgba(r, g, b, a * 0.35);
-            let _ = cr.fill_preserve();
-            cr.set_source_rgba(r, g, b, a);
-            cr.set_line_width(1.0);
-            let _ = cr.stroke();
         });
 
-        Graph { area, data }
+        if smooth {
+            let fr2 = frac.clone();
+            let last2 = last.clone();
+            let iv = interval_s.max(0.1);
+            area.add_tick_callback(move |area, _| {
+                fr2.set((last2.get().elapsed().as_secs_f64() / iv).clamp(0.0, 1.0));
+                area.queue_draw();
+                gtk::glib::ControlFlow::Continue
+            });
+        }
+
+        Graph { area, series, last }
     }
 
-    pub fn push(&self, v: f64) {
+    /// Push one new value per series.
+    pub fn push(&self, vals: &[f64]) {
         {
-            let mut buf = self.data.borrow_mut();
-            buf.pop_front();
-            buf.push_back(v.max(0.0));
+            let mut ss = self.series.borrow_mut();
+            for (i, se) in ss.iter_mut().enumerate() {
+                let v = vals.get(i).copied().unwrap_or(0.0).max(0.0);
+                se.buf.pop_front();
+                se.buf.push_back(v);
+            }
         }
+        self.last.set(Instant::now());
         self.area.queue_draw();
     }
 }
