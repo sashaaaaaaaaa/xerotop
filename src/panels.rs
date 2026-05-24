@@ -3,7 +3,7 @@
 //! scheduler calls when the panel is due. No per-panel timers.
 
 use crate::config::PanelConfig;
-use crate::metrics::{mem_percent, Cpu, Net};
+use crate::metrics::{Cpu, Net, cpu_temp, mem_percent};
 use crate::widgets::Graph;
 use gtk::prelude::*;
 use gtk::{Box as GtkBox, Label, Orientation};
@@ -21,6 +21,7 @@ const GRAPH_H: i32 = 28;
 const GREEN: (f64, f64, f64, f64) = (0.40, 1.0, 0.40, 0.9);
 const CYAN: (f64, f64, f64, f64) = (0.40, 0.8, 1.0, 0.9);
 const AMBER: (f64, f64, f64, f64) = (1.0, 0.75, 0.30, 0.9);
+const RED: (f64, f64, f64, f64) = (1.0, 0.45, 0.40, 0.9);
 
 /// Build a panel from its config, or None for an unknown type.
 pub fn build(cfg: &PanelConfig) -> Option<Panel> {
@@ -37,6 +38,10 @@ pub fn build(cfg: &PanelConfig) -> Option<Panel> {
         "mem" => Some(metric_panel("MEM", interval, cfg.graph, CYAN, || {
             let p = mem_percent();
             (format!("{p:.0}%"), p)
+        })),
+        "temp" => Some(metric_panel("TEMP", interval, cfg.graph, RED, || {
+            let t = cpu_temp();
+            (format!("{t:.0}\u{00b0}"), t)
         })),
         "net" => Some(net_panel(interval, cfg.graph)),
         other => {

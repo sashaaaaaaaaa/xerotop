@@ -6,7 +6,7 @@ use crate::config::{Config, Edge};
 use crate::panels::{self, Panel};
 use crate::power;
 use gtk::prelude::*;
-use gtk::{glib, Application, ApplicationWindow, Box as GtkBox, Orientation};
+use gtk::{Application, ApplicationWindow, Box as GtkBox, Orientation, glib};
 use gtk4_layer_shell::{Edge as LsEdge, Layer, LayerShell};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -23,10 +23,30 @@ pub fn build(app: &Application, cfg: &Config) {
     let edge = cfg.bar.edge;
     let horizontal = edge.is_horizontal();
     let anchors = match edge {
-        Edge::Right => [(LsEdge::Right, true), (LsEdge::Top, true), (LsEdge::Bottom, true), (LsEdge::Left, false)],
-        Edge::Left => [(LsEdge::Left, true), (LsEdge::Top, true), (LsEdge::Bottom, true), (LsEdge::Right, false)],
-        Edge::Top => [(LsEdge::Top, true), (LsEdge::Left, true), (LsEdge::Right, true), (LsEdge::Bottom, false)],
-        Edge::Bottom => [(LsEdge::Bottom, true), (LsEdge::Left, true), (LsEdge::Right, true), (LsEdge::Top, false)],
+        Edge::Right => [
+            (LsEdge::Right, true),
+            (LsEdge::Top, true),
+            (LsEdge::Bottom, true),
+            (LsEdge::Left, false),
+        ],
+        Edge::Left => [
+            (LsEdge::Left, true),
+            (LsEdge::Top, true),
+            (LsEdge::Bottom, true),
+            (LsEdge::Right, false),
+        ],
+        Edge::Top => [
+            (LsEdge::Top, true),
+            (LsEdge::Left, true),
+            (LsEdge::Right, true),
+            (LsEdge::Bottom, false),
+        ],
+        Edge::Bottom => [
+            (LsEdge::Bottom, true),
+            (LsEdge::Left, true),
+            (LsEdge::Right, true),
+            (LsEdge::Top, false),
+        ],
     };
     for (e, on) in anchors {
         window.set_anchor(e, on);

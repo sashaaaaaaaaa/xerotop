@@ -2,8 +2,8 @@
 //! when `push` is called (on new data) — never on a frame clock. That decoupling
 //! of sample-rate from frame-rate is the battery-first core.
 
-use gtk::prelude::*;
 use gtk::DrawingArea;
+use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -18,7 +18,13 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new(len: usize, w: i32, h: i32, fixed_max: Option<f64>, rgba: (f64, f64, f64, f64)) -> Self {
+    pub fn new(
+        len: usize,
+        w: i32,
+        h: i32,
+        fixed_max: Option<f64>,
+        rgba: (f64, f64, f64, f64),
+    ) -> Self {
         let area = DrawingArea::new();
         area.add_css_class("graph");
         area.set_content_width(w);

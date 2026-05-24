@@ -10,7 +10,7 @@ mod power;
 mod widgets;
 
 use gtk::prelude::*;
-use gtk::{glib, Application};
+use gtk::{Application, glib};
 
 const APP_ID: &str = "cc.xeron.xerotop";
 

@@ -2,6 +2,7 @@
 //! which is the whole point (the ewwii version forked ~600 shells/sec).
 
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
 
 /// CPU busy percentage, computed from deltas of /proc/stat.
@@ -60,6 +61,40 @@ pub fn mem_percent() -> f64 {
     } else {
         0.0
     }
+}
+
+/// CPU temperature in °C, from the first preferred hwmon sensor (falling back
+/// to any sensor that exposes a temperature input).
+pub fn cpu_temp() -> f64 {
+    const PREFERRED: [&str; 3] = ["k10temp", "coretemp", "zenpower"];
+    let Ok(hwmons) = fs::read_dir("/sys/class/hwmon") else {
+        return 0.0;
+    };
+    let mut paths: Vec<_> = hwmons.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for want_preferred in [true, false] {
+        for p in &paths {
+            let name = fs::read_to_string(p.join("name")).unwrap_or_default();
+            let is_preferred = PREFERRED.contains(&name.trim());
+            if is_preferred == want_preferred
+                && let Some(t) = read_temp_input(p)
+            {
+                return t;
+            }
+        }
+    }
+    0.0
+}
+
+fn read_temp_input(dir: &Path) -> Option<f64> {
+    for i in 1..=8 {
+        if let Ok(s) = fs::read_to_string(dir.join(format!("temp{i}_input")))
+            && let Ok(milli) = s.trim().parse::<f64>()
+        {
+            return Some(milli / 1000.0);
+        }
+    }
+    None
 }
 
 /// Network throughput in KB/s, summed across non-loopback interfaces.

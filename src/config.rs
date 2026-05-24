@@ -75,7 +75,7 @@ fn default_true() -> bool {
 }
 
 fn default_panels() -> Vec<PanelConfig> {
-    ["clock", "cpu", "mem", "net"]
+    ["clock", "cpu", "mem", "temp", "net"]
         .iter()
         .map(|k| PanelConfig {
             kind: (*k).to_string(),
@@ -153,6 +153,11 @@ graph = true
 [[panel]]
 type = "mem"
 interval = 2
+graph = true
+
+[[panel]]
+type = "temp"
+interval = 5
 graph = true
 
 [[panel]]
