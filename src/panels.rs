@@ -50,7 +50,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             let (tf, df) = clock_fmts();
             Some(clock_panel(iv, tf, df))
         }
-        "cpu" => Some(metric_panel("CPU", iv, cfg.graph, GREEN, smooth, {
+        "cpu" => Some(metric_panel("CPU", iv, cfg.graph, GREEN, smooth, None, {
             let cpu = Rc::new(RefCell::new(Cpu::new()));
             move || {
                 let p = cpu.borrow_mut().sample();
@@ -58,10 +58,18 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             }
         })),
         "mem" => Some(mem_panel(iv, cfg.graph, smooth)),
-        "temp" => Some(metric_panel("TEMP", iv, cfg.graph, RED, smooth, || {
-            let t = cpu_temp();
-            (format!("{t:.0}\u{00b0}"), t)
-        })),
+        "temp" => Some(metric_panel(
+            "TEMP",
+            iv,
+            cfg.graph,
+            RED,
+            smooth,
+            Some(100.0),
+            || {
+                let t = cpu_temp();
+                (format!("{t:.0}\u{00b0}"), t)
+            },
+        )),
         "gpu" => Some(gpu_panel(iv, cfg.graph, smooth)),
         "disk" => Some(disk_panel(iv, cfg.graph, smooth)),
         "net" => Some(net_panel(iv, cfg.graph, smooth)),
@@ -95,14 +103,19 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             GREEN,
             || match volume() {
                 Some((p, muted)) => {
-                    let icon = if muted || p <= 0.0 {
+                    let glyph = if muted || p <= 0.0 {
                         "\u{f026}" // muted
                     } else if p < 50.0 {
                         "\u{f027}" // low
                     } else {
                         "\u{f028}" // high
                     };
-                    (icon.to_string(), format!("{p:.0}%"), p)
+                    let icon = if muted {
+                        format!("<span foreground='#ff6666'>{glyph}</span>")
+                    } else {
+                        glyph.to_string()
+                    };
+                    (icon, format!("{p:.0}%"), p)
                 }
                 None => ("\u{f028}".to_string(), "--".to_string(), 0.0),
             },
@@ -176,6 +189,7 @@ fn metric_panel<F>(
     graph: bool,
     rgba: Rgba,
     smooth: bool,
+    fixed: Option<f64>,
     sampler: F,
 ) -> Panel
 where
@@ -188,7 +202,7 @@ where
         &root,
         GRAPH_H,
         &[(rgba, true)],
-        Some(100.0),
+        fixed,
         interval,
         smooth,
         graph,
@@ -274,7 +288,7 @@ where
         let bar = bar.clone();
         move || {
             let (ic, text, pct) = sampler();
-            icon.set_text(&ic);
+            icon.set_markup(&ic); // markup so samplers can color (e.g. red mute)
             val.set_text(&text);
             bar.set(pct);
         }
@@ -357,7 +371,7 @@ fn gpu_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         &root,
         GRAPH_H,
         &[(VIOLET, true)],
-        Some(100.0),
+        None,
         interval,
         smooth,
         graph,
@@ -438,7 +452,7 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
     let top = gtk::CenterBox::new();
 
     // power menu button → popover with logout/reboot/shutdown
-    let power = gtk::MenuButton::new();
+    let power = gtk::Button::new();
     power.set_label("\u{f011}"); // power-off glyph
     power.add_css_class("hbtn");
     let pop = gtk::Popover::new();
@@ -459,7 +473,10 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
         menu.append(&item);
     }
     pop.set_child(Some(&menu));
-    power.set_popover(Some(&pop));
+    pop.set_parent(&power);
+    pop.set_position(gtk::PositionType::Bottom);
+    let pop_open = pop.clone();
+    power.connect_clicked(move |_| pop_open.popup());
 
     // lock button
     let lock = gtk::Button::new();
