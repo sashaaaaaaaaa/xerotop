@@ -74,6 +74,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         "disk" => Some(disk_panel(iv, cfg.graph, smooth)),
         "net" => Some(net_panel(iv, cfg.graph, smooth)),
         "win" | "taskbar" => Some(taskbar_panel()),
+        "tray" => Some(tray_panel()),
         "bat" | "battery" => Some(bar_panel(
             iv,
             RED,
@@ -549,6 +550,88 @@ fn desktop_icon(want: &str, tail: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Build a tray icon image from a StatusNotifier item (themed name, else pixmap).
+fn tray_image(it: &crate::tray::TrayItem) -> gtk::Image {
+    let img = gtk::Image::new();
+    img.set_pixel_size(18);
+    if let (Some(name), Some(display)) = (&it.icon_name, gtk::gdk::Display::default()) {
+        let theme = gtk::IconTheme::for_display(&display);
+        if let Some(path) = &it.icon_theme_path {
+            theme.add_search_path(path);
+        }
+        if theme.has_icon(name) {
+            img.set_icon_name(Some(name));
+            return img;
+        }
+    }
+    if let Some((w, h, argb)) = &it.pixmap
+        && let Some(tex) = pixmap_texture(*w, *h, argb)
+    {
+        img.set_paintable(Some(&tex));
+        return img;
+    }
+    img.set_icon_name(Some("application-x-executable"));
+    img
+}
+
+/// SNI pixmaps are ARGB32 (network byte order: bytes A,R,G,B).
+fn pixmap_texture(w: i32, h: i32, argb: &[u8]) -> Option<gtk::gdk::Texture> {
+    if w <= 0 || h <= 0 || argb.len() < (w * h * 4) as usize {
+        return None;
+    }
+    let bytes = gtk::glib::Bytes::from(argb);
+    let tex = gtk::gdk::MemoryTexture::new(
+        w,
+        h,
+        gtk::gdk::MemoryFormat::A8r8g8b8,
+        &bytes,
+        (w * 4) as usize,
+    );
+    Some(tex.upcast())
+}
+
+/// System tray: StatusNotifier items as clickable icons (left-click activates).
+fn tray_panel() -> Panel {
+    let root = panel_box();
+    root.add_css_class("tray");
+    let flow = gtk::FlowBox::new();
+    flow.set_selection_mode(gtk::SelectionMode::None);
+    flow.set_min_children_per_line(1);
+    flow.set_max_children_per_line(8);
+    flow.set_homogeneous(false);
+    root.append(&flow);
+
+    let (rx, atx) = crate::tray::spawn();
+    let atx = Rc::new(atx);
+    let flow2 = flow.clone();
+    gtk::glib::spawn_future_local(async move {
+        while let Ok(items) = rx.recv().await {
+            while let Some(child) = flow2.first_child() {
+                flow2.remove(&child);
+            }
+            for it in items {
+                let btn = gtk::Button::new();
+                btn.add_css_class("tray-item");
+                btn.set_has_frame(false);
+                btn.set_tooltip_text(Some(&it.title));
+                btn.set_child(Some(&tray_image(&it)));
+                let atx = atx.clone();
+                let id = it.id.clone();
+                btn.connect_clicked(move |_| {
+                    let _ = atx.try_send(id.clone());
+                });
+                flow2.insert(&btn, -1);
+            }
+        }
+    });
+
+    Panel {
+        root: root.upcast(),
+        interval: 3600.0,
+        update: Box::new(|| {}),
+    }
 }
 
 /// Taskbar: open windows via wlr-foreign-toplevel, rebuilt on each snapshot

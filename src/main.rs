@@ -8,6 +8,7 @@ mod metrics;
 mod panels;
 mod power;
 mod taskbar;
+mod tray;
 mod widgets;
 
 use gtk::prelude::*;

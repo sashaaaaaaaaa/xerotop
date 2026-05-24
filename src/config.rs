@@ -128,6 +128,7 @@ fn de_secs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
 fn default_panels() -> Vec<PanelConfig> {
     [
         "header", "cpu", "mem", "gpu", "disk", "net", "temp", "bat", "vol", "bri", "top", "win",
+        "tray",
     ]
     .iter()
     .map(|k| PanelConfig {
@@ -264,4 +265,7 @@ interval = 3
 
 [[panel]]
 type = "win"        # taskbar (open windows via wlr-foreign-toplevel)
+
+[[panel]]
+type = "tray"       # system tray (StatusNotifier)
 "#;

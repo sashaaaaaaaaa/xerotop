@@ -62,6 +62,18 @@
     background-color: rgba(255, 255, 255, 0.03); /* very faint faded highlight */
     border-radius: 4px;
 }
+.tray-item {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    min-height: 0;
+    min-width: 0;
+    padding: 2px;
+}
+.tray-item:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+}
 .clock-time {
     font-weight: bold;
     font-size: 18px;
