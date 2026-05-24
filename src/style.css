@@ -40,15 +40,21 @@
     color: #667788;
 }
 .task {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    min-height: 0;
+    padding: 1px 3px;
     font-size: 11px;
     color: #99aabb;
-    padding: 1px 2px;
+}
+.task:hover {
+    color: #ccddee;
 }
 .task-active {
-    font-size: 11px;
-    color: #eeeeff;
     background-color: rgba(255, 255, 255, 0.10);
-    padding: 1px 2px;
+    color: #eeeeff;
 }
 .clock-time {
     font-weight: bold;
@@ -72,6 +78,12 @@
 }
 .hbtn:hover {
     color: #eeeeff;
+}
+.lock {
+    color: #d4af37; /* brass padlock */
+}
+.lock:hover {
+    color: #ffd966;
 }
 .menu {
     padding: 4px;

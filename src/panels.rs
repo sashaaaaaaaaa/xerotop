@@ -458,7 +458,8 @@ fn taskbar_panel() -> Panel {
     let list = GtkBox::new(Orientation::Vertical, 1);
     root.append(&list);
 
-    let rx = crate::taskbar::spawn();
+    let (rx, atx) = crate::taskbar::spawn();
+    let atx = Rc::new(atx);
     let list2 = list.clone();
     gtk::glib::spawn_future_local(async move {
         while let Ok(tops) = rx.recv().await {
@@ -466,17 +467,36 @@ fn taskbar_panel() -> Panel {
                 list2.remove(&child);
             }
             for t in tops {
+                let row = GtkBox::new(Orientation::Horizontal, 4);
+                if !t.app_id.is_empty() {
+                    let img = gtk::Image::from_icon_name(&t.app_id);
+                    img.set_pixel_size(16);
+                    row.append(&img);
+                }
                 let text = if t.title.is_empty() {
-                    t.app_id
+                    t.app_id.clone()
                 } else {
-                    t.title
+                    t.title.clone()
                 };
-                let l = Label::new(Some(&text));
-                l.add_css_class(if t.activated { "task-active" } else { "task" });
-                l.set_xalign(0.0);
-                l.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                l.set_max_width_chars(1); // ellipsize within the bar width
-                list2.append(&l);
+                let lbl = Label::new(Some(&text));
+                lbl.set_xalign(0.0);
+                lbl.set_hexpand(true);
+                lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                lbl.set_max_width_chars(1); // ellipsize within the bar width
+                row.append(&lbl);
+
+                let btn = gtk::Button::new();
+                btn.add_css_class("task");
+                if t.activated {
+                    btn.add_css_class("task-active");
+                }
+                btn.set_child(Some(&row));
+                let atx = atx.clone();
+                let id = t.id;
+                btn.connect_clicked(move |_| {
+                    let _ = atx.send(id); // ask the wayland thread to activate it
+                });
+                list2.append(&btn);
             }
         }
     });
@@ -657,6 +677,7 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
     let lock = gtk::Button::new();
     lock.set_label("\u{f023}"); // lock glyph
     lock.add_css_class("hbtn");
+    lock.add_css_class("lock");
     let lock_cmd = actions.lock.clone();
     lock.connect_clicked(move |_| spawn(&lock_cmd));
 

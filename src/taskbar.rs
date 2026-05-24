@@ -1,13 +1,15 @@
 //! Taskbar via the wlr-foreign-toplevel-management protocol. A dedicated thread
-//! runs a wayland-client event loop (a second connection to the compositor),
-//! tracks open toplevels, and streams sorted snapshots to the GTK thread over an
-//! async channel. The GTK side rebuilds the list dynamically (no pre-allocated
-//! slots — the whole reason we left ewwii's static config).
+//! runs a calloop event loop driving a wayland-client queue (second compositor
+//! connection) plus an activate channel. It tracks open toplevels and streams
+//! sorted snapshots to the GTK thread; clicks come back as activate requests.
 
+use calloop::EventLoop;
+use calloop_wayland_source::WaylandSource;
 use std::collections::HashMap;
 use wayland_client::backend::ObjectId;
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry::WlRegistry;
+use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 use wayland_protocols_wlr::foreign_toplevel::v1::client::{
     zwlr_foreign_toplevel_handle_v1::{self as handle, ZwlrForeignToplevelHandleV1},
@@ -16,6 +18,7 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::{
 
 #[derive(Clone, Default)]
 pub struct Toplevel {
+    pub id: u64,
     pub title: String,
     pub app_id: String,
     pub activated: bool,
@@ -23,6 +26,9 @@ pub struct Toplevel {
 
 struct State {
     toplevels: HashMap<ObjectId, Toplevel>,
+    handles: HashMap<u64, ZwlrForeignToplevelHandleV1>,
+    next_id: u64,
+    seat: Option<WlSeat>,
     tx: async_channel::Sender<Vec<Toplevel>>,
     dirty: bool,
 }
@@ -37,35 +43,63 @@ impl State {
         list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
         let _ = self.tx.send_blocking(list);
     }
+
+    fn activate(&self, id: u64) {
+        if let (Some(h), Some(seat)) = (self.handles.get(&id), self.seat.as_ref()) {
+            h.activate(seat);
+        }
+    }
 }
 
-/// Spawn the wayland listener thread; returns a receiver of window snapshots.
-pub fn spawn() -> async_channel::Receiver<Vec<Toplevel>> {
+/// Spawn the wayland listener; returns (snapshot receiver, activate sender).
+pub fn spawn() -> (
+    async_channel::Receiver<Vec<Toplevel>>,
+    calloop::channel::Sender<u64>,
+) {
     let (tx, rx) = async_channel::unbounded();
+    let (atx, achan) = calloop::channel::channel::<u64>();
     std::thread::spawn(move || {
-        if let Err(e) = run(tx) {
+        if let Err(e) = run(tx, achan) {
             eprintln!("xerotop: taskbar wayland thread exited: {e}");
         }
     });
-    rx
+    (rx, atx)
 }
 
-fn run(tx: async_channel::Sender<Vec<Toplevel>>) -> Result<(), Box<dyn std::error::Error>> {
+fn run(
+    tx: async_channel::Sender<Vec<Toplevel>>,
+    achan: calloop::channel::Channel<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
-    let (globals, mut queue) = registry_queue_init::<State>(&conn)?;
+    let (globals, queue) = registry_queue_init::<State>(&conn)?;
     let qh = queue.handle();
-    // bind the toplevel manager (errors if the compositor lacks the protocol)
     let _mgr: ZwlrForeignToplevelManagerV1 = globals.bind(&qh, 1..=3, ())?;
+    let seat: Option<WlSeat> = globals.bind(&qh, 1..=8, ()).ok();
 
     let mut state = State {
         toplevels: HashMap::new(),
+        handles: HashMap::new(),
+        next_id: 0,
+        seat,
         tx,
         dirty: false,
     };
-    loop {
-        queue.blocking_dispatch(&mut state)?;
-        state.flush();
-    }
+
+    let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
+    let handle = event_loop.handle();
+    WaylandSource::new(conn, queue)
+        .insert(handle.clone())
+        .map_err(|_| "failed to insert wayland source")?;
+    handle
+        .insert_source(achan, |event, _, state| {
+            if let calloop::channel::Event::Msg(id) = event {
+                state.activate(id);
+            }
+        })
+        .map_err(|_| "failed to insert activate channel")?;
+
+    event_loop.run(None, &mut state, |state| state.flush())?;
+    Ok(())
 }
 
 impl Dispatch<WlRegistry, GlobalListContents> for State {
@@ -74,6 +108,18 @@ impl Dispatch<WlRegistry, GlobalListContents> for State {
         _: &WlRegistry,
         _: wayland_client::protocol::wl_registry::Event,
         _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<WlSeat, ()> for State {
+    fn event(
+        _: &mut Self,
+        _: &WlSeat,
+        _: wayland_client::protocol::wl_seat::Event,
+        _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
@@ -90,7 +136,16 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let mgr::Event::Toplevel { toplevel } = event {
-            state.toplevels.insert(toplevel.id(), Toplevel::default());
+            let id = state.next_id;
+            state.next_id += 1;
+            state.toplevels.insert(
+                toplevel.id(),
+                Toplevel {
+                    id,
+                    ..Default::default()
+                },
+            );
+            state.handles.insert(id, toplevel);
         }
     }
 
@@ -108,15 +163,15 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        let id = proxy.id();
+        let oid = proxy.id();
         match event {
             handle::Event::Title { title } => {
-                if let Some(t) = this.toplevels.get_mut(&id) {
+                if let Some(t) = this.toplevels.get_mut(&oid) {
                     t.title = title;
                 }
             }
             handle::Event::AppId { app_id } => {
-                if let Some(t) = this.toplevels.get_mut(&id) {
+                if let Some(t) = this.toplevels.get_mut(&oid) {
                     t.app_id = app_id;
                 }
             }
@@ -125,7 +180,7 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
                     .chunks_exact(4)
                     .map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
                     .any(|v| v == handle::State::Activated as u32);
-                if let Some(t) = this.toplevels.get_mut(&id) {
+                if let Some(t) = this.toplevels.get_mut(&oid) {
                     t.activated = activated;
                 }
             }
@@ -133,7 +188,9 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
                 this.dirty = true;
             }
             handle::Event::Closed => {
-                this.toplevels.remove(&id);
+                if let Some(t) = this.toplevels.remove(&oid) {
+                    this.handles.remove(&t.id);
+                }
                 this.dirty = true;
             }
             _ => {}
