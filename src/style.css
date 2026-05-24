@@ -59,7 +59,7 @@
 .task-min {
     color: #6b7785; /* dimmed */
     font-style: italic;
-    background-color: rgba(255, 255, 255, 0.05); /* faint faded highlight */
+    background-color: rgba(255, 255, 255, 0.03); /* very faint faded highlight */
     border-radius: 4px;
 }
 .clock-time {
