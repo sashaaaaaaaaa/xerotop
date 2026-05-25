@@ -138,6 +138,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         "cores" => Some(cores_panel(iv)),
         "uptime" => Some(uptime_panel(iv)),
         "kbd" | "leds" => Some(kbd_panel(iv)),
+        "weather" | "wx" => Some(weather_panel()),
         "top" => Some(top_panel(iv)),
         "gpu" => Some(gpu_panel(iv, cfg.graph, smooth)),
         "disk" => Some(disk_panel(iv, cfg.graph, smooth)),
@@ -507,6 +508,107 @@ fn kbd_panel(interval: f64) -> Panel {
         root: root.upcast(),
         interval,
         update,
+    }
+}
+
+thread_local! {
+    static WEATHER_CFG: RefCell<crate::config::WeatherConfig> =
+        RefCell::new(crate::config::WeatherConfig::default());
+    static WEATHER_HOST: RefCell<Option<WeatherHost>> = const { RefCell::new(None) };
+}
+
+/// Set the weather config. Call before (re)building panels.
+pub fn set_weather_config(c: crate::config::WeatherConfig) {
+    WEATHER_CFG.with(|w| *w.borrow_mut() = c);
+}
+
+fn weather_req() -> crate::weather::WeatherReq {
+    WEATHER_CFG.with(|w| {
+        let c = w.borrow();
+        crate::weather::WeatherReq {
+            location: c.location.clone(),
+            units: c.units.clone(),
+            interval_min: c.interval_min,
+        }
+    })
+}
+
+type WeatherRenderFn = Rc<dyn Fn(&crate::weather::Weather)>;
+
+#[derive(Clone)]
+struct WeatherHost {
+    req_tx: std::sync::mpsc::Sender<crate::weather::WeatherReq>,
+    latest: Rc<RefCell<crate::weather::Weather>>,
+    render: Rc<RefCell<Option<WeatherRenderFn>>>,
+}
+
+/// The single weather fetch thread, spawned on first use.
+fn weather_host() -> WeatherHost {
+    WEATHER_HOST.with(|cell| {
+        if cell.borrow().is_none() {
+            let (rx, req_tx) = crate::weather::spawn(weather_req());
+            let host = WeatherHost {
+                req_tx,
+                latest: Rc::new(RefCell::new(crate::weather::Weather::default())),
+                render: Rc::new(RefCell::new(None)),
+            };
+            let (latest, render) = (host.latest.clone(), host.render.clone());
+            gtk::glib::spawn_future_local(async move {
+                while let Ok(w) = rx.recv().await {
+                    *latest.borrow_mut() = w.clone();
+                    let cb = render.borrow().clone();
+                    if let Some(cb) = cb {
+                        cb(&w);
+                    }
+                }
+            });
+            *cell.borrow_mut() = Some(host);
+        }
+        cell.borrow().as_ref().unwrap().clone()
+    })
+}
+
+/// Weather: condition glyph + text + temperature, fetched from wttr.in.
+fn weather_panel() -> Panel {
+    let root = panel_box();
+    let row = GtkBox::new(Orientation::Horizontal, 6);
+    let icon = Label::new(Some("\u{e30d}"));
+    icon.add_css_class("meter-icon");
+    let cond = Label::new(Some("…"));
+    cond.add_css_class("label");
+    cond.set_xalign(0.0);
+    cond.set_hexpand(true);
+    cond.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    let temp = Label::new(Some("--"));
+    temp.add_css_class("value");
+    temp.set_xalign(1.0);
+    row.append(&icon);
+    row.append(&cond);
+    row.append(&temp);
+    root.append(&row);
+
+    let host = weather_host();
+    let _ = host.req_tx.send(weather_req()); // push current config → refetch if changed
+
+    let (icon_c, cond_c, temp_c) = (icon.clone(), cond.clone(), temp.clone());
+    let render: WeatherRenderFn = Rc::new(move |w: &crate::weather::Weather| {
+        if w.ok {
+            icon_c.set_text(&w.icon);
+            cond_c.set_text(&w.cond);
+            temp_c.set_text(&w.temp);
+        } else {
+            icon_c.set_text("\u{e374}");
+            cond_c.set_text("weather");
+            temp_c.set_text("--");
+        }
+    });
+    render(&host.latest.borrow());
+    *host.render.borrow_mut() = Some(render);
+
+    Panel {
+        root: root.upcast(),
+        interval: 3600.0, // the fetch thread drives updates
+        update: Box::new(|| {}),
     }
 }
 

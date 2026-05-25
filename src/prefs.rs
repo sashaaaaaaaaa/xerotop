@@ -25,10 +25,13 @@ thread_local! {
     static WINDOW: RefCell<Option<Window>> = const { RefCell::new(None) };
 }
 
-const PANEL_TYPES: [&str; 17] = [
-    "header", "clock", "cpu", "cores", "mem", "gpu", "disk", "net", "temp", "uptime", "kbd", "bat",
-    "vol", "bri", "top", "win", "tray",
+const PANEL_TYPES: [&str; 18] = [
+    "header", "clock", "cpu", "cores", "mem", "gpu", "disk", "net", "temp", "weather", "uptime",
+    "kbd", "bat", "vol", "bri", "top", "win", "tray",
 ];
+
+/// Panel types that have a history graph (so the "graph" toggle is meaningful).
+const GRAPH_TYPES: [&str; 6] = ["cpu", "mem", "gpu", "disk", "net", "temp"];
 
 /// Open (or re-focus) the preferences window for the given bar.
 pub fn open(handle: &BarHandle) {
@@ -326,6 +329,45 @@ fn general_page(handle: &BarHandle) -> GtkBox {
     });
     page.append(&row("Tray icon size (px)", &tray_size));
 
+    // Weather (for the "weather" panel; fetched from wttr.in).
+    let wx_loc = Entry::new();
+    wx_loc.set_text(&cfg.weather.location);
+    wx_loc.set_hexpand(true);
+    wx_loc.set_placeholder_text(Some("city or lat,lon — blank = auto by IP"));
+    wx_loc.set_tooltip_text(Some("Press Enter to apply"));
+    let h = handle.clone();
+    wx_loc.connect_changed(move |e| h.cfg.borrow_mut().weather.location = e.text().to_string());
+    let h = handle.clone();
+    wx_loc.connect_activate(move |_| h.apply());
+    page.append(&row("Weather location", &wx_loc));
+
+    let wx_units = DropDown::from_strings(&["auto", "°C", "°F"]);
+    wx_units.set_selected(match cfg.weather.units.as_str() {
+        "c" => 1,
+        "f" => 2,
+        _ => 0,
+    });
+    let h = handle.clone();
+    wx_units.connect_selected_notify(move |d| {
+        h.cfg.borrow_mut().weather.units = match d.selected() {
+            1 => "c",
+            2 => "f",
+            _ => "auto",
+        }
+        .into();
+        h.apply();
+    });
+    page.append(&row("Weather units", &wx_units));
+
+    let wx_iv = SpinButton::with_range(5.0, 240.0, 5.0);
+    wx_iv.set_value(cfg.weather.interval_min);
+    let h = handle.clone();
+    wx_iv.connect_value_changed(move |s| {
+        h.cfg.borrow_mut().weather.interval_min = s.value();
+        h.apply();
+    });
+    page.append(&row("Weather refresh (min)", &wx_iv));
+
     drop(cfg);
     page.append(&save_bar(handle));
     page
@@ -544,8 +586,26 @@ fn save_theme_file(name: &str, theme: &Theme) -> std::io::Result<()> {
 fn panels_page(handle: &BarHandle) -> GtkBox {
     let page = page_box();
     page.append(&Label::new(Some(
-        "Panels render in order. Reorder, toggle graphs, set intervals.",
+        "Panels render top-to-bottom in this order.",
     )));
+
+    // Column header explaining each control.
+    let head = GtkBox::new(Orientation::Horizontal, 6);
+    let mk = |text: &str, chars: i32, expand: bool| {
+        let l = Label::new(Some(text));
+        l.add_css_class("label");
+        l.set_xalign(0.0);
+        if chars > 0 {
+            l.set_width_chars(chars);
+        }
+        l.set_hexpand(expand);
+        l
+    };
+    head.append(&mk("panel", 8, false));
+    head.append(&mk("interval (s)", 12, false));
+    head.append(&mk("", 0, true)); // graph column / spacer
+    head.append(&mk("move · delete", 0, false));
+    page.append(&head);
 
     let list = ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
@@ -608,6 +668,8 @@ fn panel_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> GtkBox {
     let iv = SpinButton::with_range(0.1, 600.0, 0.5);
     iv.set_digits(1);
     iv.set_value(interval);
+    iv.set_width_chars(11);
+    iv.set_tooltip_text(Some("Seconds between updates for this panel"));
     let h = handle.clone();
     iv.connect_value_changed(move |s| {
         h.cfg.borrow_mut().panel[i].interval = s.value();
@@ -615,14 +677,17 @@ fn panel_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> GtkBox {
     });
     r.append(&iv);
 
-    let g = CheckButton::with_label("graph");
-    g.set_active(graph);
-    let h = handle.clone();
-    g.connect_toggled(move |c| {
-        h.cfg.borrow_mut().panel[i].graph = c.is_active();
-        h.apply();
-    });
-    r.append(&g);
+    // Only panels that actually draw a history graph get the toggle.
+    if GRAPH_TYPES.contains(&kind.as_str()) {
+        let g = CheckButton::with_label("graph");
+        g.set_active(graph);
+        let h = handle.clone();
+        g.connect_toggled(move |c| {
+            h.cfg.borrow_mut().panel[i].graph = c.is_active();
+            h.apply();
+        });
+        r.append(&g);
+    }
 
     let spacer = GtkBox::new(Orientation::Horizontal, 0);
     spacer.set_hexpand(true);

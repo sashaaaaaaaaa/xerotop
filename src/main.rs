@@ -11,6 +11,7 @@ mod prefs;
 mod taskbar;
 mod theme;
 mod tray;
+mod weather;
 mod widgets;
 
 use gtk::Application;

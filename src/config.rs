@@ -176,6 +176,28 @@ pub struct TempConfig {
     pub sensors: Vec<TempSensor>,
 }
 
+/// Weather panel config (fetched from wttr.in).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WeatherConfig {
+    /// Location (city / "lat,lon"); empty = auto-locate by IP.
+    pub location: String,
+    /// "auto" | "c" | "f".
+    pub units: String,
+    /// Minutes between fetches.
+    pub interval_min: f64,
+}
+
+impl Default for WeatherConfig {
+    fn default() -> Self {
+        Self {
+            location: String::new(),
+            units: "auto".into(),
+            interval_min: 30.0,
+        }
+    }
+}
+
 /// One of the four header icon slots: left/right of the time, left/right of the
 /// date.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,6 +310,8 @@ pub struct Config {
     pub tray: TrayConfig,
     #[serde(default)]
     pub temp: TempConfig,
+    #[serde(default)]
+    pub weather: WeatherConfig,
     /// Header icon buttons (the 4 slots). Empty → default power-menu + lock.
     #[serde(default, rename = "header_button")]
     pub header: Vec<HeaderButton>,
@@ -309,6 +333,7 @@ impl Default for Config {
             power: PowerConfig::default(),
             tray: TrayConfig::default(),
             temp: TempConfig::default(),
+            weather: WeatherConfig::default(),
             header: Vec::new(),
             actions: Actions::default(),
             panel: default_panels(),
