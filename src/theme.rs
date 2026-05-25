@@ -37,7 +37,6 @@ pub struct Theme {
     pub amber: String,
     pub red: String,
     pub violet: String,
-    pub pale: String,
 }
 
 impl Default for Theme {
@@ -58,7 +57,6 @@ impl Default for Theme {
             amber: "#ffbf4d".into(),
             red: "#ff7366".into(),
             violet: "#c78cff".into(),
-            pale: "#b3ebff".into(),
         }
     }
 }
@@ -106,7 +104,6 @@ impl Theme {
             amber: rgba(&self.amber, 0.9),
             red: rgba(&self.red, 0.9),
             violet: rgba(&self.violet, 0.9),
-            pale: rgba(&self.pale, 0.85),
         }
     }
 

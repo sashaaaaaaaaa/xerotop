@@ -51,8 +51,8 @@ impl Cpu {
     }
 }
 
-/// Memory breakdown from /proc/meminfo: (used%, cache%). "used" excludes
-/// reclaimable memory; "cache" = Buffers + Cached + SReclaimable.
+/// Memory breakdown from /proc/meminfo: (used%, cache%). "used" follows the
+/// ewwii script: (MemTotal - MemAvailable) / MemTotal.
 pub fn mem_detail() -> (f64, f64) {
     let info = fs::read_to_string("/proc/meminfo").unwrap_or_default();
     let field = |key: &str| -> f64 {
@@ -69,7 +69,13 @@ pub fn mem_detail() -> (f64, f64) {
         return (0.0, 0.0);
     }
     let cache = field("Buffers:") + field("Cached:") + field("SReclaimable:");
-    let used = (total - field("MemFree:") - cache).max(0.0);
+    let available = field("MemAvailable:");
+    let used = if available > 0.0 {
+        total - available
+    } else {
+        total - field("MemFree:") - cache
+    }
+    .max(0.0);
     (used / total * 100.0, cache / total * 100.0)
 }
 
@@ -270,7 +276,8 @@ pub fn disk_usage() -> Option<(f64, f64, f64)> {
     (total > 0.0).then_some((used / total * 100.0, used / 1e9, total / 1e9))
 }
 
-/// Network throughput in KB/s, summed across non-loopback interfaces.
+/// Network throughput in KB/s for the default-route interface, falling back to
+/// all non-loopback interfaces when no default route is visible.
 pub struct Net {
     prev: (u64, u64),
     at: Instant,
@@ -284,14 +291,29 @@ impl Net {
         }
     }
 
+    fn default_iface() -> Option<String> {
+        let routes = fs::read_to_string("/proc/net/route").ok()?;
+        routes.lines().skip(1).find_map(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            (cols.get(1) == Some(&"00000000")).then(|| cols[0].to_string())
+        })
+    }
+
     fn raw() -> (u64, u64) {
         let dev = fs::read_to_string("/proc/net/dev").unwrap_or_default();
+        let default_iface = Self::default_iface();
         let (mut rx, mut tx) = (0u64, 0u64);
         for line in dev.lines().skip(2) {
             let Some((iface, rest)) = line.split_once(':') else {
                 continue;
             };
-            if iface.trim() == "lo" {
+            let iface = iface.trim();
+            if iface == "lo" {
+                continue;
+            }
+            if let Some(default_iface) = &default_iface
+                && iface != default_iface
+            {
                 continue;
             }
             let cols: Vec<u64> = rest
@@ -320,7 +342,8 @@ impl Net {
     }
 }
 
-/// Disk throughput in KB/s, summed across whole-disk block devices.
+/// Disk throughput in KB/s, preferring physical whole-disk block devices and
+/// falling back to all whole disks when running in a virtualized/container view.
 pub struct Disk {
     prev: (u64, u64), // (sectors read, sectors written)
     at: Instant,
@@ -336,20 +359,36 @@ impl Disk {
 
     fn raw() -> (u64, u64) {
         let stats = fs::read_to_string("/proc/diskstats").unwrap_or_default();
-        let (mut rd, mut wr) = (0u64, 0u64);
+        let (mut all_rd, mut all_wr) = (0u64, 0u64);
+        let (mut physical_rd, mut physical_wr) = (0u64, 0u64);
+        let mut found_physical = false;
         for line in stats.lines() {
             let f: Vec<&str> = line.split_whitespace().collect();
             if f.len() < 10 {
                 continue;
             }
-            // whole disks live in /sys/block; partitions are nested under them
-            if !Path::new("/sys/block").join(f[2]).exists() {
+            let sys = Path::new("/sys/block").join(f[2]);
+            // Whole disks live in /sys/block; partitions are nested under them.
+            if !sys.exists() {
                 continue;
             }
-            rd += f[5].parse().unwrap_or(0); // sectors read
-            wr += f[9].parse().unwrap_or(0); // sectors written
+            let rd = f[5].parse().unwrap_or(0);
+            let wr = f[9].parse().unwrap_or(0);
+            all_rd += rd;
+            all_wr += wr;
+            // Prefer physical devices, so dm-crypt/LVM/loop/zram do not double-count
+            // IO already represented by the underlying disk.
+            if sys.join("device").exists() {
+                physical_rd += rd;
+                physical_wr += wr;
+                found_physical = true;
+            }
         }
-        (rd, wr)
+        if found_physical {
+            (physical_rd, physical_wr)
+        } else {
+            (all_rd, all_wr)
+        }
     }
 
     /// (read, write) in KB/s since last call (sectors are 512 bytes).

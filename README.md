@@ -33,7 +33,7 @@ that spawned ~600 shell processes per second to poll metrics. xerotop reads
 Working:
 
 - **layer-shell bar** anchorable to any edge, configurable thickness & opacity
-- native meters with autoscaled gamma graphs: **CPU, MEM (used + cache), GPU,
+- native meters with autoscaled gamma graphs: **CPU, MEM, GPU,
   DISK, NET**
 - **TEMP** panel: multiple hwmon sensors as mini-charts + fan RPM
 - **BAT / VOL / BRI** as icon + level bar + value, with **scroll/click control**
@@ -90,7 +90,7 @@ length = "full"     # "full" to fill the edge, or a pixel count (e.g. 600)
 align = "center"    # start | center | end  (where a fixed-length bar sits)
 monitor = 0         # output index; -1 = compositor's choice
 smooth = true       # continuous graph scrolling; false = stepped (less battery)
-graph_gamma = 2.0   # autoscaled-graph spikiness; >1 sharper peaks, 1.0 = linear
+graph_gamma = 1.0   # autoscaled-graph spikiness; 1.0 = ewwii, >1 sharper peaks
 opacity = 0.88      # background opacity: 0.0 transparent .. 1.0 opaque
 
 [power]

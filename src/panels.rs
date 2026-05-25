@@ -7,7 +7,7 @@ use crate::metrics::{
     Cpu, Disk, Net, Top, add_brightness, add_volume, battery, brightness, disk_usage, fan_rpm, gpu,
     mem_detail, temp_cpu, temp_gpu, temp_ssd, toggle_mute, volume,
 };
-use crate::widgets::{Bar, Graph, Rgba};
+use crate::widgets::{Bar, Graph, GraphScale, Rgba};
 use gtk::prelude::*;
 use gtk::{Box as GtkBox, Label, Orientation};
 use std::cell::RefCell;
@@ -35,7 +35,6 @@ pub struct Palette {
     pub amber: Rgba,
     pub red: Rgba,
     pub violet: Rgba,
-    pub pale: Rgba, // MEM cache overlay line
 }
 
 impl Default for Palette {
@@ -46,21 +45,19 @@ impl Default for Palette {
             amber: (1.0, 0.75, 0.30, 0.9),
             red: (1.0, 0.45, 0.40, 0.9),
             violet: (0.78, 0.55, 1.0, 0.9),
-            pale: (0.70, 0.92, 1.0, 0.85),
         }
     }
 }
 
 thread_local! {
-    /// Gamma for autoscaled graphs (cpu/gpu/net/disk).
-    static AUTOSCALE_GAMMA: std::cell::Cell<f64> = const { std::cell::Cell::new(1.4) };
+    /// Gamma for autoscaled graphs.
+    static AUTOSCALE_GAMMA: std::cell::Cell<f64> = const { std::cell::Cell::new(1.0) };
     static PALETTE: std::cell::Cell<Palette> = const { std::cell::Cell::new(Palette {
         green: (0.40, 1.0, 0.40, 0.9),
         cyan: (0.40, 0.8, 1.0, 0.9),
         amber: (1.0, 0.75, 0.30, 0.9),
         red: (1.0, 0.45, 0.40, 0.9),
         violet: (0.78, 0.55, 1.0, 0.9),
-        pale: (0.70, 0.92, 1.0, 0.85),
     }) };
 }
 
@@ -113,7 +110,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             cfg.graph,
             pal().green,
             smooth,
-            None,
+            GraphScale::DynamicRange,
             {
                 let cpu = Rc::new(RefCell::new(Cpu::new()));
                 move || {
@@ -238,38 +235,34 @@ fn graph_widget(
     root: &GtkBox,
     h: i32,
     specs: &[(Rgba, bool)],
-    fixed: Option<f64>,
+    scale: GraphScale,
     iv: f64,
     smooth: bool,
     graph: bool,
 ) -> Option<Graph> {
     graph.then(|| {
-        // Autoscaled graphs (cpu/gpu/net/disk) use gamma > 1 to deepen valleys
-        // and sharpen peaks (ewwii-like spikiness); fixed-scale meters (mem/temp)
-        // stay linear so the fill reflects the true level.
-        let gamma = if fixed.is_some() {
-            1.0
-        } else {
-            AUTOSCALE_GAMMA.with(|c| c.get())
+        let gamma = match scale {
+            GraphScale::Fixed(_) => 1.0,
+            GraphScale::DynamicPeak | GraphScale::DynamicRange => AUTOSCALE_GAMMA.with(|c| c.get()),
         };
         // Width 0 + hexpand: fill the bar's width instead of imposing a fixed
         // floor, so reducing bar thickness actually shrinks the graphs. The draw
         // func already adapts to whatever width it's allocated.
-        let g = Graph::new(0, h, fixed, gamma, specs, iv, smooth, false);
+        let g = Graph::new(0, h, scale, gamma, specs, iv, smooth);
         g.area.set_hexpand(true);
         root.append(&g.area);
         g
     })
 }
 
-/// 0..100 single-series filled metric (cpu, temp).
+/// Single-series filled metric.
 fn metric_panel<F>(
     name: &str,
     interval: f64,
     graph: bool,
     rgba: Rgba,
     smooth: bool,
-    fixed: Option<f64>,
+    scale: GraphScale,
     sampler: F,
 ) -> Panel
 where
@@ -282,7 +275,7 @@ where
         &root,
         GRAPH_H,
         &[(rgba, true)],
-        fixed,
+        scale,
         interval,
         smooth,
         graph,
@@ -301,28 +294,25 @@ where
     }
 }
 
-/// MEM: filled "used" plus an overlay line at used+cache (so cache/buffers shows
-/// as the band between fill and line).
+/// MEM: ewwii-style used-memory fill with dynamic min..max graph scaling.
 fn mem_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let root = panel_box();
     let (row, val) = header("MEM");
     root.append(&row);
-    // Autoscale (None) like cpu/gpu so memory swings show as spikes instead of a
-    // flat low line pinned to 0..100% of total RAM.
     let g = graph_widget(
         &root,
         GRAPH_H,
-        &[(pal().cyan, true), (pal().pale, false)],
-        None,
+        &[(pal().violet, true)],
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
     );
     let update = Box::new(move || {
-        let (used, cache) = mem_detail();
+        let (used, _) = mem_detail();
         val.set_text(&format!("{used:.0}%"));
         if let Some(g) = &g {
-            g.push(&[used, used + cache]);
+            g.push(&[used]);
         }
     });
     Panel {
@@ -421,7 +411,7 @@ fn net_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         &root,
         MINI_H,
         &[(pal().cyan, true)],
-        None,
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
@@ -430,7 +420,7 @@ fn net_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         &root,
         MINI_H,
         &[(pal().amber, true)],
-        None,
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
@@ -460,8 +450,8 @@ fn gpu_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let g = graph_widget(
         &root,
         GRAPH_H,
-        &[(pal().violet, true)],
-        None,
+        &[(pal().red, true)],
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
@@ -495,7 +485,7 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         &root,
         MINI_H,
         &[(pal().cyan, true)],
-        None,
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
@@ -504,7 +494,7 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         &root,
         MINI_H,
         &[(pal().amber, true)],
-        None,
+        GraphScale::DynamicRange,
         interval,
         smooth,
         graph,
@@ -1156,6 +1146,7 @@ fn taskbar_panel() -> Panel {
             lbl.set_xalign(0.0);
             lbl.set_hexpand(true);
             lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            lbl.set_width_chars(1);
             lbl.set_max_width_chars(1); // ellipsize within the bar width
             row.append(&lbl);
 
@@ -1230,17 +1221,16 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         val.set_xalign(1.0);
         val.set_width_chars(3);
 
-        // Trend graph (autobase: amplifies the small swings temps actually have).
+        // Trend graph — dynamic min..max amplifies the small swings temps have.
         let g = graph.then(|| {
             let g = Graph::new(
                 30,
                 MINI_H,
-                None,
+                GraphScale::DynamicRange,
                 1.0,
                 &[(color, true)],
                 interval,
                 smooth,
-                true,
             );
             g.area.set_valign(gtk::Align::Center);
             g
@@ -1310,6 +1300,8 @@ fn top_panel(interval: f64) -> Panel {
         name.set_xalign(0.0);
         name.set_hexpand(true);
         name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        name.set_width_chars(1);
+        name.set_max_width_chars(1);
         let val = Label::new(Some(""));
         val.add_css_class("value");
         val.set_xalign(1.0);

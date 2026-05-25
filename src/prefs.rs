@@ -365,7 +365,7 @@ type Getter = fn(&Theme) -> String;
 type Setter = fn(&mut Theme, String);
 
 #[allow(clippy::type_complexity)]
-const COLOR_FIELDS: [(&str, Getter, Setter); 12] = [
+const COLOR_FIELDS: [(&str, Getter, Setter); 11] = [
     (
         "Background",
         |t| t.background.clone(),
@@ -393,7 +393,6 @@ const COLOR_FIELDS: [(&str, Getter, Setter); 12] = [
     ("Graph amber", |t| t.amber.clone(), |t, v| t.amber = v),
     ("Graph red", |t| t.red.clone(), |t, v| t.red = v),
     ("Graph violet", |t| t.violet.clone(), |t, v| t.violet = v),
-    ("Graph pale", |t| t.pale.clone(), |t, v| t.pale = v),
 ];
 
 fn theme_page(handle: &BarHandle) -> GtkBox {

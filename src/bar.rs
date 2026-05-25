@@ -124,10 +124,14 @@ impl BarHandle {
         if horizontal {
             self.window.set_height_request(cfg.bar.thickness);
             self.window.set_width_request(length_px);
+            self.root.set_height_request(cfg.bar.thickness);
+            self.root.set_width_request(length_px);
             self.root.set_orientation(Orientation::Horizontal);
         } else {
             self.window.set_width_request(cfg.bar.thickness);
             self.window.set_height_request(length_px);
+            self.root.set_width_request(cfg.bar.thickness);
+            self.root.set_height_request(length_px);
             self.root.set_orientation(Orientation::Vertical);
         }
         self.window.auto_exclusive_zone_enable();

@@ -1,10 +1,10 @@
 //! Reusable meters. `Graph` is a multi-series filled history chart with
-//! non-linear `gamma` (≈0.5 lifts low values, gkrellm/ewwii feel) and optional
+//! non-linear `gamma` (>1 sharpens peaks, gkrellm/ewwii feel) and optional
 //! smooth horizontal scrolling (continuous "second-hand" motion vs 1 Hz ticks).
 //! `Bar` is a single-level fill.
 //!
-//! Series: the first/each `fill` series draws a translucent area + edge line;
-//! non-fill series draw a line only (e.g. MEM's used-vs-cache overlay).
+//! Series: `fill` series draw a translucent area + edge line; non-fill series
+//! draw a line only.
 
 use gtk::DrawingArea;
 use gtk::prelude::*;
@@ -14,6 +14,17 @@ use std::rc::Rc;
 use std::time::Instant;
 
 pub type Rgba = (f64, f64, f64, f64);
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)] // Fixed/peak modes are reserved for the upcoming graph config surface.
+pub enum GraphScale {
+    /// Fixed 0..max scale for meters that should preserve an absolute ceiling.
+    Fixed(f64),
+    /// Fixed 0 baseline with a recent-window peak.
+    DynamicPeak,
+    /// Recent min..max range. This matches ewwii's default dynamic graph mode.
+    DynamicRange,
+}
 
 /// Trace a rounded-rectangle path (radius clamped so it can't exceed a pill).
 fn rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
@@ -39,144 +50,169 @@ struct Series {
 pub struct Graph {
     pub area: DrawingArea,
     series: Rc<RefCell<Vec<Series>>>,
-    last: Rc<Cell<Instant>>,
+    cap: usize,
+    times: Rc<RefCell<VecDeque<Instant>>>,
+    max_age_s: f64,
 }
 
 impl Graph {
-    /// `specs` = one `(color, fill?)` per series. `fixed_max` None = autoscale.
+    /// `specs` = one `(color, fill?)` per series. `scale` controls whether the
+    /// graph uses fixed 0..max, dynamic 0..peak, or dynamic min..max.
     /// `smooth` adds a per-frame scroll between samples.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         w: i32,
         h: i32,
-        fixed_max: Option<f64>,
+        scale: GraphScale,
         gamma: f64,
         specs: &[(Rgba, bool)],
         interval_s: f64,
         smooth: bool,
-        // Scale to the recent min..max instead of 0..max — amplifies small swings
-        // on values that never go near zero (temps). Ignores fixed_max.
-        autobase: bool,
     ) -> Self {
         let area = DrawingArea::new();
         area.add_css_class("graph");
         area.set_content_width(w);
         area.set_content_height(h);
 
-        // Sample count tracks a ~60s window so the graph spans the same wall-clock
-        // time at any interval (and fills in ~60s, not 128s at a 2s interval).
-        let len = ((WINDOW_SECS / interval_s.max(0.05)).round() as usize).clamp(8, 512);
+        // Keep a little more than the visible window so the line can enter from
+        // off-canvas smoothly instead of rescaling during warmup.
+        let iv = interval_s.max(0.05);
+        let len = ((WINDOW_SECS / iv).ceil() as usize + 2).clamp(8, 512);
         let series: Vec<Series> = specs
             .iter()
             .map(|(rgba, fill)| Series {
-                buf: VecDeque::from(vec![0.0; len]),
+                buf: VecDeque::with_capacity(len),
                 rgba: *rgba,
                 fill: *fill,
             })
             .collect();
         let series = Rc::new(RefCell::new(series));
-        let last = Rc::new(Cell::new(Instant::now()));
-        let frac = Rc::new(Cell::new(0.0_f64));
+        let times = Rc::new(RefCell::new(VecDeque::with_capacity(len)));
+        let max_age_s = WINDOW_SECS + iv * 2.0;
 
         let s = series.clone();
-        let fr = frac.clone();
+        let t = times.clone();
         area.set_draw_func(move |_, cr, w, h| {
             let (w, h) = (w as f64, h as f64);
             let ss = s.borrow();
-            let Some(n) = ss.first().map(|se| se.buf.len()) else {
-                return;
-            };
-            if n < 3 {
+            let times = t.borrow();
+            let n = ss
+                .iter()
+                .map(|se| se.buf.len())
+                .min()
+                .unwrap_or(0)
+                .min(times.len());
+            if n == 0 {
                 return;
             }
-            // Vertical scale: autobase maps recent min..max across the height;
-            // otherwise 0..(fixed_max or recent peak).
-            let (lo, hi) = if autobase {
-                let mut lo = f64::INFINITY;
-                let mut hi = f64::NEG_INFINITY;
-                for v in ss.iter().flat_map(|se| se.buf.iter().copied()) {
-                    lo = lo.min(v);
-                    hi = hi.max(v);
+            let (lo, hi) = match scale {
+                GraphScale::Fixed(max) => (0.0, max.max(1e-9)),
+                GraphScale::DynamicPeak => {
+                    let peak = ss
+                        .iter()
+                        .flat_map(|se| se.buf.iter().take(n).copied())
+                        .fold(0.0, f64::max);
+                    (0.0, (peak * 1.15).max(1e-9))
                 }
-                (lo, hi)
-            } else {
-                let hi = match fixed_max {
-                    Some(m) => m,
-                    None => {
-                        // Autoscale to the recent peak, with 15% headroom so a
-                        // sustained peak (e.g. GPU pinned high) doesn't clip flat
-                        // against the very top of the chart.
-                        let peak = ss
-                            .iter()
-                            .flat_map(|se| se.buf.iter().copied())
-                            .fold(1e-9, f64::max);
-                        peak * 1.15
+                GraphScale::DynamicRange => {
+                    let mut lo = f64::INFINITY;
+                    let mut hi = f64::NEG_INFINITY;
+                    for v in ss.iter().flat_map(|se| se.buf.iter().take(n).copied()) {
+                        lo = lo.min(v);
+                        hi = hi.max(v);
                     }
-                };
-                (0.0, hi)
+                    (lo, hi)
+                }
             };
             let span = hi - lo;
             let yof = |v: f64| {
                 if span < 1e-6 {
-                    h / 2.0 // flat (constant) → midline rather than collapsed
+                    h // ewwii dynamic graphs with no range sit on the baseline.
                 } else {
                     h - ((v - lo) / span).clamp(0.0, 1.0).powf(gamma) * h
                 }
             };
-            let step = w / (n as f64 - 2.0);
-            let f = fr.get();
-            let xof = |i: usize| (i as f64 - f) * step;
+            let now = Instant::now();
+            let xof = |i: usize| {
+                let age = now
+                    .checked_duration_since(times[i])
+                    .unwrap_or_default()
+                    .as_secs_f64();
+                w - (age / WINDOW_SECS) * w
+            };
+            let _ = cr.save();
+            cr.rectangle(0.0, 0.0, w, h);
+            cr.clip();
 
             for se in ss.iter() {
                 let (r, g, b, a) = se.rgba;
+                let first_x = xof(0);
+                let first_y = yof(se.buf[0]);
+                let last_y = yof(se.buf[n - 1]);
                 if se.fill {
                     // filled area (closed down to the baseline)
-                    cr.move_to(xof(0), h);
-                    for i in 0..n {
+                    cr.move_to(first_x, h);
+                    cr.line_to(first_x, first_y);
+                    for i in 1..n {
                         cr.line_to(xof(i), yof(se.buf[i]));
                     }
-                    cr.line_to(xof(n - 1), h);
+                    cr.line_to(w, last_y);
+                    cr.line_to(w, h);
                     cr.close_path();
                     cr.set_source_rgba(r, g, b, a * 0.35);
                     let _ = cr.fill();
                 }
-                // top curve only — never the closing verticals/baseline, so no
-                // stray vertical line scrolls down the right edge.
-                cr.move_to(xof(0), yof(se.buf[0]));
+                // Top curve only: never stroke closing verticals/baselines.
+                cr.move_to(first_x, first_y);
                 for i in 1..n {
                     cr.line_to(xof(i), yof(se.buf[i]));
                 }
+                cr.line_to(w, last_y);
                 cr.set_source_rgba(r, g, b, a);
                 cr.set_line_width(1.0);
                 let _ = cr.stroke();
             }
+            let _ = cr.restore();
         });
 
         if smooth {
-            let fr2 = frac.clone();
-            let last2 = last.clone();
-            let iv = interval_s.max(0.1);
             area.add_tick_callback(move |area, _| {
-                fr2.set((last2.get().elapsed().as_secs_f64() / iv).clamp(0.0, 1.0));
                 area.queue_draw();
                 gtk::glib::ControlFlow::Continue
             });
         }
 
-        Graph { area, series, last }
+        Graph {
+            area,
+            series,
+            cap: len,
+            times,
+            max_age_s,
+        }
     }
 
     /// Push one new value per series.
     pub fn push(&self, vals: &[f64]) {
         {
+            let now = Instant::now();
             let mut ss = self.series.borrow_mut();
+            let mut times = self.times.borrow_mut();
+            times.push_back(now);
             for (i, se) in ss.iter_mut().enumerate() {
                 let v = vals.get(i).copied().unwrap_or(0.0).max(0.0);
-                se.buf.pop_front();
                 se.buf.push_back(v);
             }
+            while times.len() > self.cap
+                || times.front().is_some_and(|t| {
+                    times.len() > 2 && now.duration_since(*t).as_secs_f64() > self.max_age_s
+                })
+            {
+                times.pop_front();
+                for se in ss.iter_mut() {
+                    se.buf.pop_front();
+                }
+            }
         }
-        self.last.set(Instant::now());
         self.area.queue_draw();
     }
 }

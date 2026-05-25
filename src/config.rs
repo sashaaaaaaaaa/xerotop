@@ -95,8 +95,8 @@ pub struct BarConfig {
     pub monitor: i32,
     /// Continuous graph scrolling (smoother, but redraws per frame). Off = stepped.
     pub smooth: bool,
-    /// Spikiness of autoscaled graphs (cpu/gpu/net/disk): >1 sharpens peaks and
-    /// deepens valleys, 1.0 = linear. Fixed meters (mem/temp) ignore this.
+    /// Spikiness of autoscaled graphs: 1.0 matches ewwii, >1 sharpens peaks
+    /// and deepens valleys.
     pub graph_gamma: f64,
     /// Background opacity 0.0 (transparent) .. 1.0 (opaque).
     pub opacity: f64,
@@ -112,7 +112,7 @@ impl Default for BarConfig {
             layer: Layer::Top,
             monitor: 0,
             smooth: true,
-            graph_gamma: 2.0,
+            graph_gamma: 1.0,
             opacity: 0.88,
         }
     }
@@ -304,7 +304,7 @@ align = "center"    # start | center | end  (only used when length is fixed)
 layer = "top"       # top | bottom | background | overlay  (bottom = windows over bar)
 monitor = 0
 smooth = true       # continuous graph scrolling; false = stepped (less battery)
-graph_gamma = 2.0   # autoscaled-graph spikiness; >1 sharper peaks, 1.0 = linear
+graph_gamma = 1.0   # autoscaled-graph spikiness; 1.0 = ewwii, >1 sharper peaks
 opacity = 0.88      # background opacity: 0.0 transparent .. 1.0 opaque
 
 [power]
@@ -338,7 +338,7 @@ graph = true
 
 [[panel]]
 type = "mem"
-interval = 1
+interval = 2
 graph = true
 
 [[panel]]
@@ -353,7 +353,7 @@ graph = true
 
 [[panel]]
 type = "net"
-interval = 2
+interval = 1
 graph = true
 
 [[panel]]
@@ -407,7 +407,8 @@ mod tests {
         assert_eq!(iv("cpu"), Some(2.0));
         assert_eq!(iv("bat"), Some(10.0));
         assert_eq!(iv("top"), Some(3.0));
-        assert_eq!(iv("mem"), Some(1.0));
+        assert_eq!(iv("mem"), Some(2.0));
+        assert_eq!(iv("net"), Some(1.0));
     }
 
     #[test]
