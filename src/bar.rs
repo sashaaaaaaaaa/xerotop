@@ -3,13 +3,22 @@
 //! in-memory `Config` whenever `BarHandle::apply` is called, so the prefs GUI
 //! can change anything live without restarting.
 
-use crate::config::{Align, BarLength as Length, Config, Edge};
+use crate::config::{Align, BarLength as Length, Config, Edge, Layer};
 use crate::panels::{self, Panel};
 use crate::power;
 use crate::theme::Theme;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Box as GtkBox, Orientation, glib};
-use gtk4_layer_shell::{Edge as LsEdge, Layer, LayerShell};
+use gtk4_layer_shell::{Edge as LsEdge, Layer as LsLayer, LayerShell};
+
+fn ls_layer(l: Layer) -> LsLayer {
+    match l {
+        Layer::Background => LsLayer::Background,
+        Layer::Bottom => LsLayer::Bottom,
+        Layer::Top => LsLayer::Top,
+        Layer::Overlay => LsLayer::Overlay,
+    }
+}
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -81,6 +90,8 @@ impl BarHandle {
         } else {
             self.window.set_monitor(None);
         }
+
+        self.window.set_layer(ls_layer(cfg.bar.layer));
 
         let edge = cfg.bar.edge;
         let horizontal = edge.is_horizontal();
@@ -170,7 +181,6 @@ impl BarHandle {
 pub fn build(app: &Application, cfg: Config) -> BarHandle {
     let window = ApplicationWindow::builder().application(app).build();
     window.init_layer_shell();
-    window.set_layer(Layer::Top);
     window.set_namespace(Some("xerotop"));
     window.add_css_class("xerotop"); // scopes the transparent-window rule to us
     // Size to exactly our request every time. A resizable window remembers the

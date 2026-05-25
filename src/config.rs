@@ -68,6 +68,18 @@ pub enum Align {
     End,
 }
 
+/// The wlr-layer-shell layer the bar lives on. `top` (default) draws above
+/// normal windows; `bottom`/`background` let windows be dragged over the bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Layer {
+    Background,
+    Bottom,
+    #[default]
+    Top,
+    Overlay,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BarConfig {
@@ -78,6 +90,8 @@ pub struct BarConfig {
     pub length: BarLength,
     /// Position of a fixed-length bar along its edge (start/center/end).
     pub align: Align,
+    /// Stacking layer: top (above windows) / bottom / background / overlay.
+    pub layer: Layer,
     pub monitor: i32,
     /// Continuous graph scrolling (smoother, but redraws per frame). Off = stepped.
     pub smooth: bool,
@@ -95,6 +109,7 @@ impl Default for BarConfig {
             thickness: 150,
             length: BarLength::Full,
             align: Align::Center,
+            layer: Layer::Top,
             monitor: 0,
             smooth: true,
             graph_gamma: 2.0,
@@ -286,6 +301,7 @@ edge = "right"      # left | right | top | bottom  (left/right = vertical bar)
 thickness = 150     # px: width for vertical bars, height for horizontal
 length = "full"     # "full"/"max" to fill the edge, or a pixel count (e.g. 600)
 align = "center"    # start | center | end  (only used when length is fixed)
+layer = "top"       # top | bottom | background | overlay  (bottom = windows over bar)
 monitor = 0
 smooth = true       # continuous graph scrolling; false = stepped (less battery)
 graph_gamma = 2.0   # autoscaled-graph spikiness; >1 sharper peaks, 1.0 = linear

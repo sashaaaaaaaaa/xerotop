@@ -4,7 +4,7 @@
 //! drag a slider or pick a color. "Save" persists config.toml / the theme file.
 
 use crate::bar::BarHandle;
-use crate::config::{Align, BarLength, Edge, PanelConfig};
+use crate::config::{Align, BarLength, Edge, Layer, PanelConfig};
 use crate::theme::{Theme, themes_dir};
 use gtk::gdk::RGBA;
 use gtk::glib;
@@ -215,6 +215,26 @@ fn general_page(handle: &BarHandle) -> GtkBox {
         h.apply();
     });
     page.append(&row("Monitor (-1 = auto)", &mon));
+
+    // Stacking layer
+    let layer = DropDown::from_strings(&["background", "bottom", "top", "overlay"]);
+    layer.set_selected(match cfg.bar.layer {
+        Layer::Background => 0,
+        Layer::Bottom => 1,
+        Layer::Top => 2,
+        Layer::Overlay => 3,
+    });
+    let h = handle.clone();
+    layer.connect_selected_notify(move |d| {
+        h.cfg.borrow_mut().bar.layer = match d.selected() {
+            0 => Layer::Background,
+            1 => Layer::Bottom,
+            3 => Layer::Overlay,
+            _ => Layer::Top,
+        };
+        h.apply();
+    });
+    page.append(&row("Layer (bottom = windows over bar)", &layer));
 
     // Opacity
     let opacity = Scale::with_range(Orientation::Horizontal, 0.0, 1.0, 0.01);
@@ -616,11 +636,18 @@ fn save_bar(handle: &BarHandle) -> GtkBox {
     let status = Label::new(None);
     status.set_xalign(0.0);
     status.set_hexpand(true);
+    // Ellipsize + zero natural width so a long save message can't widen the
+    // window; the full path goes in the tooltip.
+    status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    status.set_width_chars(0);
     let save = Button::with_label("Save to config.toml");
     let h = handle.clone();
     let status_c = status.clone();
     save.connect_clicked(move |_| match save_config(&h) {
-        Ok(p) => status_c.set_text(&format!("Saved to {}", p.display())),
+        Ok(p) => {
+            status_c.set_text("Saved ✓");
+            status_c.set_tooltip_text(Some(&format!("Saved to {}", p.display())));
+        }
         Err(e) => status_c.set_text(&format!("Save failed: {e}")),
     });
     bar.append(&status);
