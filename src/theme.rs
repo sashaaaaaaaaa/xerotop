@@ -105,6 +105,10 @@ impl Theme {
         let bright = lighten(&self.foreground, 0.3);
         format!(
             r#"
+/* The toplevel window must be transparent, or our semi-transparent .bar fill
+   composites over GTK's opaque window background (looks grey) instead of the
+   desktop showing through. */
+window {{ background-color: transparent; }}
 .bar {{ font-family: "{font}", monospace; font-size: 12px; background-color: {bar_bg}; padding: 6px; }}
 .panel {{ padding: 2px 4px; }}
 .meter {{ padding: 1px 4px; }}
