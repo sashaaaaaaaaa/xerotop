@@ -160,6 +160,9 @@ pub fn build(app: &Application, cfg: Config) -> BarHandle {
     window.init_layer_shell();
     window.set_layer(Layer::Top);
     window.set_namespace(Some("xerotop"));
+    // Size to exactly our request every time. A resizable window remembers the
+    // largest size it ever had, so reducing thickness wouldn't shrink it back.
+    window.set_resizable(false);
 
     let theme_css = gtk::CssProvider::new();
     if let Some(display) = gtk::gdk::Display::default() {

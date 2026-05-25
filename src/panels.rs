@@ -198,9 +198,13 @@ fn header(name: &str) -> (GtkBox, Label) {
     lbl.add_css_class("label");
     lbl.set_xalign(0.0);
     lbl.set_hexpand(true);
+    // Ellipsize so the labels don't floor the bar's minimum width — lets the bar
+    // shrink below the labels' natural text width when thickness is reduced.
+    lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let val = Label::new(Some("--"));
     val.add_css_class("value");
     val.set_xalign(1.0);
+    val.set_ellipsize(gtk::pango::EllipsizeMode::End);
     row.append(&lbl);
     row.append(&val);
     (row, val)
@@ -210,6 +214,7 @@ fn sub() -> Label {
     let l = Label::new(Some(""));
     l.add_css_class("sub");
     l.set_xalign(0.0);
+    l.set_ellipsize(gtk::pango::EllipsizeMode::End);
     l
 }
 
@@ -1244,6 +1249,9 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
     pop.set_position(gtk::PositionType::Bottom);
     let pop_open = pop.clone();
     power.connect_clicked(move |_| pop_open.popup());
+    // Unparent the popover when the button is destroyed (panel rebuilds drop the
+    // button) — otherwise GTK warns about finalizing a button with a child left.
+    power.connect_destroy(move |_| pop.unparent());
 
     // lock button
     let lock = gtk::Button::new();
@@ -1255,6 +1263,7 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
 
     let time = Label::new(Some("--:--"));
     time.add_css_class("clock-time");
+    time.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
     top.set_start_widget(Some(&power));
     top.set_center_widget(Some(&time));
@@ -1263,6 +1272,7 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
     let date = Label::new(Some(""));
     date.add_css_class("clock-date");
     date.set_halign(gtk::Align::Center);
+    date.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
     root.append(&top);
     root.append(&date);
@@ -1289,8 +1299,10 @@ fn clock_panel(interval: f64, time_fmt: String, date_fmt: String) -> Panel {
     root.add_css_class("clock");
     let time = Label::new(Some("--:--"));
     time.add_css_class("clock-time");
+    time.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let date = Label::new(Some(""));
     date.add_css_class("clock-date");
+    date.set_ellipsize(gtk::pango::EllipsizeMode::End);
     root.append(&time);
     root.append(&date);
     let update = Box::new(move || {
