@@ -75,6 +75,25 @@ fn row(text: &str, widget: &impl IsA<gtk::Widget>) -> GtkBox {
     r
 }
 
+/// A labeled text entry for a shell command in `actions`. Stores on every edit;
+/// applies (rebinds the captured command in the running bar) on Enter.
+fn command_row(
+    handle: &BarHandle,
+    label: &str,
+    initial: &str,
+    set: fn(&mut crate::config::Actions, String),
+) -> GtkBox {
+    let entry = Entry::new();
+    entry.set_text(initial);
+    entry.set_hexpand(true);
+    entry.set_tooltip_text(Some("Press Enter to apply to the running bar"));
+    let h = handle.clone();
+    entry.connect_changed(move |e| set(&mut h.cfg.borrow_mut().actions, e.text().to_string()));
+    let h = handle.clone();
+    entry.connect_activate(move |_| h.apply());
+    row(label, &entry)
+}
+
 // ---- color conversion ------------------------------------------------------
 
 fn hex_to_rgba(hex: &str) -> RGBA {
@@ -284,19 +303,37 @@ fn general_page(handle: &BarHandle) -> GtkBox {
     });
     page.append(&row("On-battery interval ×", &mult));
 
-    // Volume mixer (launched on right-click of the volume meter).
-    let mixer = Entry::new();
-    mixer.set_text(&cfg.actions.mixer);
-    mixer.set_hexpand(true);
-    mixer.set_tooltip_text(Some("Press Enter to apply to the running bar"));
-    let h = handle.clone();
-    mixer.connect_changed(move |e| {
-        h.cfg.borrow_mut().actions.mixer = e.text().to_string();
-    });
-    // The command is captured when the volume panel is built, so rebind on Enter.
-    let h = handle.clone();
-    mixer.connect_activate(move |_| h.apply());
-    page.append(&row("Volume mixer (right-click)", &mixer));
+    // Action commands (captured when their panel is built; Enter rebinds).
+    page.append(&command_row(
+        handle,
+        "Lock command",
+        &cfg.actions.lock,
+        |a, v| a.lock = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Logout command",
+        &cfg.actions.logout,
+        |a, v| a.logout = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Reboot command",
+        &cfg.actions.reboot,
+        |a, v| a.reboot = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Shutdown command",
+        &cfg.actions.shutdown,
+        |a, v| a.shutdown = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Volume mixer (right-click)",
+        &cfg.actions.mixer,
+        |a, v| a.mixer = v,
+    ));
 
     // Tray layout
     let tray_cols = SpinButton::with_range(1.0, 32.0, 1.0);
