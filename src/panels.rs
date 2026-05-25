@@ -1212,12 +1212,22 @@ fn hex_rgba(hex: &str) -> Rgba {
 
 type TempSrc = Box<dyn Fn() -> Option<f64>>;
 
+/// Sentinel chip name for the averaging row.
+pub const AVG_CHIP: &str = "@avg";
+
+#[derive(Clone, Copy, PartialEq)]
+enum RowKind {
+    Temp,
+    Fan,
+    Avg, // averages the other temps; positioned anywhere in the list
+}
+
 struct TempRow {
     bar: Option<Bar>,
     graph: Option<Graph>,
     val: Label,
     src: TempSrc,
-    is_temp: bool,
+    kind: RowKind,
 }
 
 /// TEMP panel: configurable temp/fan sensors as bar + value + trend, with an
@@ -1230,13 +1240,18 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     head.set_xalign(0.0);
     root.append(&head);
 
-    // (label, is_temp, color, value source) for each row, in display order.
-    let mut specs: Vec<(String, bool, Rgba, TempSrc)> = Vec::new();
+    // (label, kind, color, value source) for each row, in display order.
+    let mut specs: Vec<(String, RowKind, Rgba, TempSrc)> = Vec::new();
     if cfg.sensors.is_empty() {
-        specs.push(("cpu".into(), true, pal().red, Box::new(temp_cpu)));
-        specs.push(("gpu".into(), true, pal().violet, Box::new(temp_gpu)));
-        specs.push(("ssd".into(), true, pal().cyan, Box::new(temp_ssd)));
-        specs.push(("fan".into(), false, pal().amber, Box::new(fan_rpm)));
+        specs.push(("cpu".into(), RowKind::Temp, pal().red, Box::new(temp_cpu)));
+        specs.push((
+            "gpu".into(),
+            RowKind::Temp,
+            pal().violet,
+            Box::new(temp_gpu),
+        ));
+        specs.push(("ssd".into(), RowKind::Temp, pal().cyan, Box::new(temp_ssd)));
+        specs.push(("fan".into(), RowKind::Fan, pal().amber, Box::new(fan_rpm)));
     } else {
         let defaults = [
             pal().red,
@@ -1246,24 +1261,36 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
             pal().amber,
         ];
         for (i, s) in cfg.sensors.iter().enumerate() {
-            let is_temp = !s.input.starts_with("fan");
-            let label = if s.label.is_empty() {
-                s.chip.clone()
+            let kind = if s.chip == AVG_CHIP {
+                RowKind::Avg
+            } else if s.input.starts_with("fan") {
+                RowKind::Fan
             } else {
+                RowKind::Temp
+            };
+            let label = if !s.label.is_empty() {
                 s.label.clone()
+            } else if kind == RowKind::Avg {
+                "avg".into()
+            } else {
+                s.chip.clone()
             };
             let color = if s.color.is_empty() {
                 defaults[i % defaults.len()]
             } else {
                 hex_rgba(&s.color)
             };
-            let (chip, input) = (s.chip.clone(), s.input.clone());
-            let src: TempSrc = Box::new(move || crate::metrics::read_sensor(&chip, &input));
-            specs.push((label, is_temp, color, src));
+            let src: TempSrc = if kind == RowKind::Avg {
+                Box::new(|| None) // computed from the other temps
+            } else {
+                let (chip, input) = (s.chip.clone(), s.input.clone());
+                Box::new(move || crate::metrics::read_sensor(&chip, &input))
+            };
+            specs.push((label, kind, color, src));
         }
     }
 
-    let make_row = |label: &str, is_temp: bool, color: Rgba, src: TempSrc| -> TempRow {
+    let make_row = |label: &str, kind: RowKind, color: Rgba, src: TempSrc| -> TempRow {
         let row = GtkBox::new(Orientation::Horizontal, 4);
         let lbl = Label::new(Some(label));
         lbl.add_css_class("sub");
@@ -1274,9 +1301,16 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
         let val = Label::new(Some("--"));
         val.add_css_class("value");
         val.set_xalign(1.0);
-        val.set_width_chars(if is_temp { 3 } else { 5 });
+        val.set_width_chars(if kind == RowKind::Fan { 5 } else { 3 });
 
-        let (bar, g) = if is_temp {
+        // Temps and the avg row get a bar + trend graph; fans show rpm only.
+        let (bar, g) = if kind == RowKind::Fan {
+            let sp = GtkBox::new(Orientation::Horizontal, 0);
+            sp.set_hexpand(true);
+            row.append(&sp);
+            row.append(&val);
+            (None, None)
+        } else {
             let bar = Bar::new(0, BAR_H, 100.0, color);
             bar.area.set_hexpand(true);
             bar.area.set_valign(gtk::Align::Center);
@@ -1298,13 +1332,6 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
                 g
             });
             (Some(bar), g)
-        } else {
-            // Fan: just label + rpm, no bar/graph.
-            let sp = GtkBox::new(Orientation::Horizontal, 0);
-            sp.set_hexpand(true);
-            row.append(&sp);
-            row.append(&val);
-            (None, None)
         };
         root.append(&row);
         TempRow {
@@ -1312,35 +1339,22 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
             graph: g,
             val,
             src,
-            is_temp,
+            kind,
         }
     };
 
-    let mut rows: Vec<TempRow> = specs
+    let rows: Vec<TempRow> = specs
         .into_iter()
-        .map(|(label, is_temp, color, src)| make_row(&label, is_temp, color, src))
+        .map(|(label, kind, color, src)| make_row(&label, kind, color, src))
         .collect();
 
-    // Optional average-of-temps row.
-    let avg = (cfg.average && rows.iter().any(|r| r.is_temp))
-        .then(|| make_row("avg", true, pal().green, Box::new(|| None)));
-    if let Some(a) = avg {
-        rows.push(a);
-    }
-    let avg_enabled = cfg.average;
-
     let update = Box::new(move || {
+        // Pass 1: real sensors (collect temps for the average).
         let mut temps: Vec<f64> = Vec::new();
-        // Skip the trailing avg row in the main loop; fill it after.
-        let real = if avg_enabled && !rows.is_empty() {
-            rows.len() - 1
-        } else {
-            rows.len()
-        };
-        for row in &rows[..real] {
+        for row in rows.iter().filter(|r| r.kind != RowKind::Avg) {
             match (row.src)() {
                 Some(v) => {
-                    if row.is_temp {
+                    if row.kind == RowKind::Temp {
                         row.val.set_text(&format!("{v:.0}\u{00b0}"));
                         temps.push(v);
                     } else {
@@ -1356,17 +1370,20 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
                 None => row.val.set_text("--"),
             }
         }
-        if avg_enabled
-            && let Some(a) = rows.last()
-            && !temps.is_empty()
-        {
-            let v = temps.iter().sum::<f64>() / temps.len() as f64;
-            a.val.set_text(&format!("{v:.0}\u{00b0}"));
-            if let Some(b) = &a.bar {
-                b.set(v);
-            }
-            if let Some(g) = &a.graph {
-                g.push(&[v]);
+        // Pass 2: averaging rows (wherever they sit in the list).
+        let avg = (!temps.is_empty()).then(|| temps.iter().sum::<f64>() / temps.len() as f64);
+        for row in rows.iter().filter(|r| r.kind == RowKind::Avg) {
+            match avg {
+                Some(v) => {
+                    row.val.set_text(&format!("{v:.0}\u{00b0}"));
+                    if let Some(b) = &row.bar {
+                        b.set(v);
+                    }
+                    if let Some(g) = &row.graph {
+                        g.push(&[v]);
+                    }
+                }
+                None => row.val.set_text("--"),
             }
         }
     });

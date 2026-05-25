@@ -166,15 +166,14 @@ pub struct TempSensor {
     pub color: String,
 }
 
-/// TEMP panel sensor selection.
+/// TEMP panel sensor selection. The list may include a special averaging row
+/// (chip = "@avg") positioned anywhere, which averages the other temps.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TempConfig {
     /// Explicit sensor list. Empty → auto-detect cpu/gpu/ssd + first fan.
     #[serde(rename = "sensor")]
     pub sensors: Vec<TempSensor>,
-    /// Show an extra row averaging the selected temperatures.
-    pub average: bool,
 }
 
 /// Shell commands run by the header buttons (one-shot, on click — not polled).

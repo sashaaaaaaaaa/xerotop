@@ -721,54 +721,43 @@ fn temp_page(handle: &BarHandle) -> GtkBox {
 
     let page = page_box();
     page.append(&Label::new(Some(
-        "Add sensors from the dropdown. Empty list = auto-detect (cpu/gpu/ssd + fan).",
+        "Add sensors (or an 'average' row) from the dropdown; reorder/label/color each. Empty = auto-detect.",
     )));
-
-    // Average-of-temps row toggle.
-    let avg = CheckButton::with_label("Show an averaged 'avg' row");
-    avg.set_active(handle.cfg.borrow().temp.average);
-    let h = handle.clone();
-    avg.connect_toggled(move |c| {
-        h.cfg.borrow_mut().temp.average = c.is_active();
-        h.apply();
-    });
-    page.append(&avg);
 
     let list = ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
     populate_temp_list(handle, &list);
     page.append(&list);
 
-    // Add a discovered sensor.
+    // Add row: an "average" pseudo-sensor plus every discovered sensor.
     let add_row = GtkBox::new(Orientation::Horizontal, 8);
     add_row.set_margin_top(8);
     let discovered = crate::metrics::list_sensors();
-    let ids: Vec<(String, String, String)> = discovered
-        .iter()
-        .map(|s| {
-            (
-                s.chip.clone(),
-                s.input.clone(),
-                s.label.clone().unwrap_or_default(),
-            )
-        })
-        .collect();
-    let labels: Vec<String> = discovered
-        .iter()
-        .map(|s| {
-            let v = match s.kind {
-                crate::metrics::SensorKind::Temp => format!("{:.0}°", s.value),
-                crate::metrics::SensorKind::Fan => format!("{:.0}rpm", s.value),
-            };
-            match &s.label {
-                Some(l) => format!("{}/{} {l} ({v})", s.chip, s.input),
-                None => format!("{}/{} ({v})", s.chip, s.input),
-            }
-        })
-        .collect();
+    // ids[0] is the special average row; the rest mirror `discovered`.
+    let mut ids: Vec<(String, String, String)> = vec![(
+        crate::panels::AVG_CHIP.to_string(),
+        String::new(),
+        "avg".to_string(),
+    )];
+    let mut labels: Vec<String> = vec!["average (of temps)".to_string()];
+    for s in &discovered {
+        ids.push((
+            s.chip.clone(),
+            s.input.clone(),
+            s.label.clone().unwrap_or_default(),
+        ));
+        let v = match s.kind {
+            crate::metrics::SensorKind::Temp => format!("{:.0}°", s.value),
+            crate::metrics::SensorKind::Fan => format!("{:.0}rpm", s.value),
+        };
+        labels.push(match &s.label {
+            Some(l) => format!("{}/{} {l} ({v})", s.chip, s.input),
+            None => format!("{}/{} ({v})", s.chip, s.input),
+        });
+    }
     let kinds = DropDown::from_strings(&labels.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     add_row.append(&kinds);
-    let add = Button::with_label("Add sensor");
+    let add = Button::with_label("Add");
     let h = handle.clone();
     let list_c = list.clone();
     add.connect_clicked(move |_| {
@@ -791,14 +780,8 @@ fn temp_page(handle: &BarHandle) -> GtkBox {
     let reset = Button::with_label("Reset to defaults");
     let h = handle.clone();
     let list_c = list.clone();
-    let avg_c = avg.clone();
     reset.connect_clicked(move |_| {
-        {
-            let mut c = h.cfg.borrow_mut();
-            c.temp.sensors = default_temp_sensors();
-            c.temp.average = false;
-        }
-        avg_c.set_active(false);
+        h.cfg.borrow_mut().temp.sensors = default_temp_sensors();
         h.apply();
         populate_temp_list(&h, &list_c);
     });
@@ -834,7 +817,12 @@ fn temp_sensor_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> Gt
     r.set_margin_top(2);
     r.set_margin_bottom(2);
 
-    let id = Label::new(Some(&format!("{chip}/{input}")));
+    let id_text = if chip == crate::panels::AVG_CHIP {
+        "average".to_string()
+    } else {
+        format!("{chip}/{input}")
+    };
+    let id = Label::new(Some(&id_text));
     id.set_xalign(0.0);
     id.set_width_chars(15);
     id.set_ellipsize(gtk::pango::EllipsizeMode::End);
