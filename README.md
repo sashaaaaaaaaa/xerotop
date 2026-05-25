@@ -46,9 +46,15 @@ Working:
   and full `AboutToShow` support; menu item ids are resolved by path from the
   freshest layout so apps that renumber mid-open (nm-applet, …) don't misfire
 - TOML config with first-run defaults and a single battery-aware scheduler
+- **live preferences GUI** — right-click any dead space on the bar (gkrellm-style)
+  for Preferences/Quit, or run `xerotop --prefs`. Every control applies instantly
+  (no restart): edge, thickness, monitor, opacity, gamma, panels (add/remove/
+  reorder/intervals), and a full theme editor with live color & font pickers.
+- **themes** — colors + font are data, not baked CSS. The built-in `default`
+  reproduces the dark look; the GUI's "Save theme as…" writes
+  `~/.config/xerotop/themes/<name>.toml`, selectable by name.
 
-Planned: theme packs, occlusion-aware pausing, multiple bars, horizontal-mode
-polish.
+Planned: occlusion-aware pausing, multiple bars, horizontal-mode polish.
 
 ## Build & run
 
@@ -69,9 +75,12 @@ Rust ≥ 1.92). If you install a newer toolchain, bumping `Cargo.toml` to gtk4
 
 ## Configuration
 
-First run writes `~/.config/xerotop/config.toml`. Highlights:
+Most people won't touch the file — right-click the bar (or `xerotop --prefs`)
+and use the GUI. First run writes `~/.config/xerotop/config.toml`. Highlights:
 
 ```toml
+theme = "default"   # built-in, or a name under ~/.config/xerotop/themes/<name>.toml
+
 [bar]
 edge = "right"      # left | right | top | bottom  (left/right = vertical)
 thickness = 150     # px: width for vertical bars, height for horizontal
@@ -109,5 +118,7 @@ graph = true
 | `panels.rs`  | `Panel` builders + taskbar & tray UI (icon resolution, cascading menus) |
 | `taskbar.rs` | calloop thread: wlr-foreign-toplevel client → toplevel snapshots / actions |
 | `tray.rs`    | tokio thread: StatusNotifier host (`system-tray`) → item+menu snapshots / actions |
-| `bar.rs`     | layer-shell window + central battery-aware scheduler (one 250ms timer) |
-| `main.rs`    | app bootstrap + CSS |
+| `theme.rs`   | `Theme` (colors + font) → generated stylesheet + graph palette; loads theme files |
+| `prefs.rs`   | live preferences GUI (General / Theme / Panels), mutates state + `apply()` |
+| `bar.rs`     | layer-shell window, `BarHandle::apply()` live re-render, right-click menu, scheduler |
+| `main.rs`    | app bootstrap, `--prefs` |

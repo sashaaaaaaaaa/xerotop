@@ -20,9 +20,17 @@ use gtk::prelude::*;
 const APP_ID: &str = "cc.xeron.xerotop";
 
 fn main() -> glib::ExitCode {
+    // Open the prefs window on launch with `xerotop --prefs`. Read from env so
+    // GApplication's own option parser doesn't choke on the flag.
+    let open_prefs = std::env::args().any(|a| a == "--prefs");
+
     let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(|app| {
-        let _bar = bar::build(app, config::load());
+    app.connect_activate(move |app| {
+        let bar = bar::build(app, config::load());
+        if open_prefs {
+            prefs::open(&bar);
+        }
     });
-    app.run()
+    // Pass no args through to GApplication (we handled them above).
+    app.run_with_args::<&str>(&[])
 }
