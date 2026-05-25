@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xerotop — a battery-conscious system monitor for wayland</title>
+<meta name="description" content="xerotop: a gkrellm-style, battery-conscious system monitor for Wayland (wlroots / layer-shell), in Rust + GTK4. One process, zero subprocesses.">
+<style>
+  :root {
+    --bg:#0a0e0a; --panel:#0e140d; --line:#1d2a1a;
+    --fg:#8bd450; --dim:#5a7a48; --bright:#b6ff7a; --amber:#e0a83c;
+    --mono: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:var(--mono); font-size:15px; line-height:1.6;
+    text-shadow:0 0 2px rgba(139,212,80,.25);
+  }
+  /* faint CRT scanlines */
+  body::before {
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:1;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);
+    opacity:.5;
+  }
+  main { max-width:760px; margin:0 auto; padding:3rem 1.25rem 4rem; position:relative; z-index:2; }
+  a { color:var(--bright); text-decoration:none; border-bottom:1px solid var(--line); }
+  a:hover { color:#fff; border-color:var(--bright); }
+  h1 { margin:0; font-size:1px; color:transparent; }            /* wordmark is the ASCII art */
+  h2 { color:var(--amber); font-weight:600; font-size:1rem; margin:2.5rem 0 .75rem; }
+  h2::before { content:"// "; color:var(--dim); }
+  p { margin:.6rem 0; color:#a9d98a; }
+  .dim { color:var(--dim); }
+  .bright { color:var(--bright); }
+  pre { margin:0; }
+
+  .wordmark { color:var(--bright); font-size:clamp(.5rem,2.2vw,.85rem); line-height:1.1; margin:0; }
+  .tagline { color:var(--fg); margin:.25rem 0 1.5rem; }
+  .tagline .cur { display:inline-block; width:.6ch; background:var(--bright); animation:blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* the meter panel "hero" */
+  .panel {
+    background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    padding:1rem 1.1rem; margin:1.5rem 0; box-shadow:0 0 24px rgba(139,212,80,.06) inset;
+  }
+  .panel .ttl { color:var(--dim); margin-bottom:.6rem; }
+  .meter { display:flex; align-items:center; gap:.75rem; white-space:nowrap; }
+  .meter .lbl { color:var(--amber); width:3.5ch; }
+  .meter .bar { color:var(--bright); letter-spacing:1px; }
+  .meter .bar .e { color:var(--line); }
+  .meter .val { color:var(--fg); margin-left:auto; }
+  .spark { color:var(--bright); animation:flicker 2.4s ease-in-out infinite; }
+  @keyframes flicker { 0%,100%{opacity:.85} 50%{opacity:1} }
+
+  ul { list-style:none; padding:0; margin:.5rem 0; }
+  li { margin:.35rem 0; color:#a9d98a; }
+  li::before { content:"› "; color:var(--amber); }
+  li.no::before { content:"× "; color:#a85; }
+  code { color:var(--bright); }
+  .codeblock {
+    background:#070a07; border:1px solid var(--line); border-left:2px solid var(--amber);
+    border-radius:3px; padding:.85rem 1rem; overflow-x:auto; color:#a9d98a; font-size:.92em;
+  }
+  .codeblock .c { color:var(--dim); }
+  .nav { margin:1.75rem 0 0; display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; }
+  .nav a { border:1px solid var(--line); padding:.35rem .85rem; border-radius:3px; }
+  .nav a::before { content:"[ "; color:var(--dim); } .nav a::after { content:" ]"; color:var(--dim); }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--dim); font-size:.85em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>xerotop</h1>
+  <pre class="wordmark" aria-hidden="true">
+ __  _____ _ __ ___ | |_ ___  _ __
+ \ \/ / _ \ '__/ _ \| __/ _ \| '_ \
+  >  <  __/ | | (_) | || (_) | |_) |
+ /_/\_\___|_|  \___/ \__\___/| .__/
+                             |_|</pre>
+  <p class="tagline">a battery-conscious system monitor for wayland.<span class="cur">&nbsp;</span></p>
+
+  <div class="panel" role="img" aria-label="Example xerotop meters: CPU 47 percent, memory 68 percent, network and battery active">
+    <div class="ttl">┌─ xerotop ─ right · 150px ──────────</div>
+    <div class="meter"><span class="lbl">CPU</span><span class="bar">▓▓▓▓▓<span class="e">░░░░░</span></span><span class="val">47%</span></div>
+    <div class="meter"><span class="lbl">MEM</span><span class="bar">▓▓▓▓▓▓▓<span class="e">░░░</span></span><span class="val">68%</span></div>
+    <div class="meter"><span class="lbl">NET</span><span class="bar spark">▁▂▃▅▇▅▃▂▁▂▄▆▇▆▄▂</span></div>
+    <div class="meter"><span class="lbl">TMP</span><span class="bar">▓▓▓▓<span class="e">░░░░░░</span></span><span class="val">52°C</span></div>
+    <div class="meter"><span class="lbl">BAT</span><span class="bar">▓▓▓▓▓▓▓▓<span class="e">░░</span></span><span class="val">81%</span></div>
+  </div>
+
+  <p>A <span class="bright">gkrellm-style</span> system monitor for Wayland (wlroots / layer-shell),
+     in <span class="bright">Rust + GTK4</span>. A vertical (or horizontal) stack of live meters —
+     CPU, memory, network, temp, battery, clock — all in <span class="bright">one process</span>
+     with <span class="bright">zero subprocesses</span>.</p>
+
+  <p class="dim">It's the successor to an ewwii-based bar that spawned ~600 shell processes
+     <em>per second</em> to poll metrics. xerotop reads <code>/proc</code> and <code>/sys</code>
+     natively and redraws only when new data arrives.</p>
+
+  <h2>design principles</h2>
+  <ul>
+    <li><span class="bright">battery-first.</span> one scheduler, one timer; on battery every interval
+        stretches by a configurable multiplier. graphs redraw only on a new sample, never on a frame clock.</li>
+    <li><span class="bright">single process.</span> metrics, taskbar (wlr-foreign-toplevel) and tray
+        (StatusNotifier) — no IPC, no sockets, no helper daemons.</li>
+    <li><span class="bright">worse-is-better.</span> the smallest thing that genuinely works, then iterate.</li>
+    <li><span class="bright">configure by prefs, not a config language.</span> plain, stable TOML, boring on
+        purpose, never rug-pulled.</li>
+    <li><span class="bright">orientation-agnostic.</span> vertical and horizontal bars share one layout model.</li>
+  </ul>
+
+  <h2>status — walking skeleton</h2>
+  <ul>
+    <li>layer-shell bar on any edge</li>
+    <li>native CPU / MEM / NET / TEMP / BATTERY meters with graphs</li>
+    <li>clock, TOML config with first-run defaults, one battery-aware scheduler</li>
+    <li class="no">planned: tray, taskbar, disk panel, theme packs, occlusion-aware pausing, multi-bar</li>
+  </ul>
+
+  <h2>build &amp; run</h2>
+  <pre class="codeblock"><span class="c"># needs GTK4, gtk4-layer-shell, and a wlroots compositor (labwc, sway, …)</span>
+cargo build --release
+./target/release/xerotop</pre>
+  <p class="dim">Pinned to gtk4-rs 0.10 so it builds on Rust 1.89.</p>
+
+  <h2>configure</h2>
+  <p class="dim">first run writes <code>~/.config/xerotop/config.toml</code>:</p>
+  <pre class="codeblock">[bar]
+edge = "right"      <span class="c"># left | right | top | bottom</span>
+thickness = 150     <span class="c"># px</span>
+
+[power]
+battery_interval_multiplier = 2.0
+
+[[panel]]
+type = "cpu"
+interval = 1
+graph = true</pre>
+
+  <nav class="nav">
+    <a href="https://github.com/LXXero/xerotop">github</a>
+    <a href="https://github.com/LXXero/xerotop#build--run">build</a>
+    <a href="https://github.com/LXXero/xerotop#configuration">config</a>
+  </nav>
+
+  <footer>
+    xerotop · rust + gtk4 · wayland · one process, zero subprocesses
+  </footer>
+</main>
+</body>
+</html>
