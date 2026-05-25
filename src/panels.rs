@@ -592,10 +592,28 @@ fn pixmap_texture(w: i32, h: i32, argb: &[u8]) -> Option<gtk::gdk::Texture> {
     Some(tex.upcast())
 }
 
+/// Latest per-item menu trees, kept current by tray snapshots, so click/open can
+/// resolve an item's *current* id by its position even if the app renumbered.
+type MenuStore = Rc<RefCell<HashMap<String, Vec<crate::tray::MenuEntry>>>>;
+
+/// Walk `path` (sequence of child indices) into the freshest menu tree for
+/// `addr` and return the current id at that position.
+fn resolve_menu_id(store: &MenuStore, addr: &str, path: &[usize]) -> Option<i32> {
+    let map = store.borrow();
+    let mut nodes: &[crate::tray::MenuEntry] = map.get(addr)?;
+    let mut last = None;
+    for &idx in path {
+        let node = nodes.get(idx)?;
+        last = Some(node.id);
+        nodes = &node.children;
+    }
+    last
+}
+
 /// Build a custom cascading menu Popover from the DBus menu tree. Plain widgets
 /// with direct click handlers (no GAction muxer), left-aligned, with submenus
-/// that open on hover (and click). `dismiss` closes the whole chain (clicking a
-/// leaf or the root auto-hiding cascades down).
+/// that open on hover (and click). Clicks/opens resolve the item's *current* id
+/// from `store` by `path`, so an app renumbering ids mid-open can't misfire.
 #[allow(clippy::too_many_arguments)]
 fn make_menu_popover(
     entries: &[crate::tray::MenuEntry],
@@ -603,6 +621,8 @@ fn make_menu_popover(
     addr: &str,
     mp: &str,
     dismiss: &Rc<dyn Fn()>,
+    store: &MenuStore,
+    path: &[usize],
     autohide: bool,
     position: gtk::PositionType,
 ) -> gtk::Popover {
@@ -617,7 +637,7 @@ fn make_menu_popover(
     // child submenu open at this level (so hovering a sibling closes it)
     let cur_child: Rc<RefCell<Option<gtk::Popover>>> = Rc::new(RefCell::new(None));
 
-    for e in entries {
+    for (i, e) in entries.iter().enumerate() {
         if e.separator {
             let rule = GtkBox::new(Orientation::Horizontal, 0);
             rule.add_css_class("rule");
@@ -625,6 +645,9 @@ fn make_menu_popover(
             vbox.append(&rule);
             continue;
         }
+        let mut item_path = path.to_vec();
+        item_path.push(i);
+
         let row = gtk::Button::new();
         row.add_css_class("menu-item");
         row.set_sensitive(e.enabled);
@@ -641,14 +664,17 @@ fn make_menu_popover(
 
         if e.children.is_empty() {
             let atx = atx.clone();
-            let addr = addr.to_string();
-            let mp = mp.to_string();
-            let id = e.id;
+            let addr_s = addr.to_string();
+            let mp_s = mp.to_string();
+            let cached = e.id;
+            let store_c = store.clone();
+            let ipath = item_path.clone();
             let dismiss2 = dismiss.clone();
             row.connect_clicked(move |_| {
+                let id = resolve_menu_id(&store_c, &addr_s, &ipath).unwrap_or(cached);
                 let _ = atx.try_send(crate::tray::TrayAction::MenuClick(
-                    addr.clone(),
-                    mp.clone(),
+                    addr_s.clone(),
+                    mp_s.clone(),
                     id,
                 ));
                 dismiss2();
@@ -668,9 +694,11 @@ fn make_menu_popover(
             let addr_c = addr.to_string();
             let mp_c = mp.to_string();
             let dismiss_c = dismiss.clone();
+            let store_c = store.clone();
+            let ipath = item_path.clone();
             let cur = cur_child.clone();
             let row_weak = row.downgrade();
-            let sub_id = e.id;
+            let sub_cached = e.id;
             let open_child = move || {
                 if cur.borrow().is_some() {
                     return; // already open
@@ -678,11 +706,12 @@ fn make_menu_popover(
                 let Some(rw) = row_weak.upgrade() else {
                     return;
                 };
+                let sid = resolve_menu_id(&store_c, &addr_c, &ipath).unwrap_or(sub_cached);
                 // tell the app this submenu is opening so it honors its items
                 let _ = atx_c.try_send(crate::tray::TrayAction::AboutToShow(
                     addr_c.clone(),
                     mp_c.clone(),
-                    sub_id,
+                    sid,
                 ));
                 let child = make_menu_popover(
                     &children,
@@ -690,6 +719,8 @@ fn make_menu_popover(
                     &addr_c,
                     &mp_c,
                     &dismiss_c,
+                    &store_c,
+                    &ipath,
                     false,
                     gtk::PositionType::Right,
                 );
@@ -735,8 +766,14 @@ fn tray_panel() -> Panel {
     let atx = Rc::new(atx);
     let flow2 = flow.clone();
     let root2 = root.clone(); // stable parent for popovers (survives rebuilds)
+    let store: MenuStore = Rc::new(RefCell::new(HashMap::new()));
     gtk::glib::spawn_future_local(async move {
         while let Ok(items) = rx.recv().await {
+            // keep freshest menu trees so clicks resolve the current ids
+            *store.borrow_mut() = items
+                .iter()
+                .map(|it| (it.id.clone(), it.menu.clone()))
+                .collect();
             while let Some(child) = flow2.first_child() {
                 flow2.remove(&child);
             }
@@ -764,6 +801,7 @@ fn tray_panel() -> Panel {
                     let entries = it.menu.clone();
                     let btn_weak = btn.downgrade();
                     let parent = root2.clone();
+                    let store_g = store.clone();
                     let gesture = gtk::GestureClick::new();
                     gesture.set_button(3);
                     gesture.connect_pressed(move |_, _, _, _| {
@@ -794,6 +832,8 @@ fn tray_panel() -> Panel {
                             &addr,
                             &menu_path,
                             &dismiss,
+                            &store_g,
+                            &[],
                             true,
                             gtk::PositionType::Left,
                         );
