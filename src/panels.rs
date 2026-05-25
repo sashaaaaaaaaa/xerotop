@@ -248,7 +248,7 @@ fn graph_widget(
         // Width 0 + hexpand: fill the bar's width instead of imposing a fixed
         // floor, so reducing bar thickness actually shrinks the graphs. The draw
         // func already adapts to whatever width it's allocated.
-        let g = Graph::new(0, h, scale, gamma, specs, iv, smooth);
+        let g = Graph::new(0, h, scale, gamma, specs, iv, smooth, 0.0);
         g.area.set_hexpand(true);
         root.append(&g.area);
         g
@@ -1231,6 +1231,7 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
                 &[(color, true)],
                 interval,
                 smooth,
+                6.0, // °C floor so a steady sensor still shows a centered line
             );
             g.area.set_valign(gtk::Align::Center);
             g

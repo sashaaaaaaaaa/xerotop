@@ -22,7 +22,7 @@ pub enum GraphScale {
     Fixed(f64),
     /// Fixed 0 baseline with a recent-window peak.
     DynamicPeak,
-    /// Recent min..max range. This matches ewwii's default dynamic graph mode.
+    /// Recent min..max range with a little top headroom.
     DynamicRange,
 }
 
@@ -39,6 +39,7 @@ fn rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64
 }
 
 const WINDOW_SECS: f64 = 60.0; // graph spans ~60s regardless of sample interval
+const RANGE_HEADROOM: f64 = 0.18;
 
 struct Series {
     buf: VecDeque<f64>,
@@ -68,6 +69,11 @@ impl Graph {
         specs: &[(Rgba, bool)],
         interval_s: f64,
         smooth: bool,
+        // Minimum vertical range (in value units). With min..max scaling a
+        // dead-steady series (e.g. SSD temp) has zero range and collapses onto
+        // the baseline; this pads the range so it renders as a centered line and
+        // small wiggles stay visible. 0 = no floor.
+        min_span: f64,
     ) -> Self {
         let area = DrawingArea::new();
         area.add_css_class("graph");
@@ -121,8 +127,21 @@ impl Graph {
                         lo = lo.min(v);
                         hi = hi.max(v);
                     }
+                    let span = hi - lo;
+                    if span > 1e-6 {
+                        hi += span * RANGE_HEADROOM;
+                    }
                     (lo, hi)
                 }
+            };
+            // Pad to a minimum range so a near-flat series (e.g. a steady SSD
+            // temp) renders as a centered line instead of collapsing onto the
+            // baseline. 0 = no floor (cpu/net/disk stay baseline-when-idle).
+            let (lo, hi) = if min_span > 0.0 && hi - lo < min_span {
+                let mid = (lo + hi) / 2.0;
+                (mid - min_span / 2.0, mid + min_span / 2.0)
+            } else {
+                (lo, hi)
             };
             let span = hi - lo;
             let yof = |v: f64| {
