@@ -110,7 +110,7 @@ impl Theme {
    desktop showing through. */
 window {{ background-color: transparent; }}
 .bar {{ font-family: "{font}", monospace; font-size: 12px; background-color: {bar_bg}; padding: 6px; }}
-.panel {{ padding: 2px 4px; }}
+.panel {{ padding: 0 4px; }}
 .meter {{ padding: 1px 4px; }}
 .rule {{ background-color: rgba(255,255,255,0.12); min-height: 1px; min-width: 1px; margin: 2px 0; }}
 .label {{ font-weight: bold; color: {label}; }}

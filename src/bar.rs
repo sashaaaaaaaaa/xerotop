@@ -124,12 +124,6 @@ impl BarHandle {
         let mut panels: Vec<Panel> = Vec::new();
         for pcfg in cfg.panel.iter() {
             if let Some(panel) = panels::build(pcfg, cfg.bar.smooth, &cfg.actions) {
-                // Separator rule between panels (not before the first one).
-                if !panels.is_empty() {
-                    let rule = GtkBox::new(Orientation::Horizontal, 0);
-                    rule.add_css_class("rule");
-                    self.root.append(&rule);
-                }
                 self.root.append(&panel.root);
                 panels.push(panel);
             }
@@ -188,7 +182,7 @@ pub fn build(app: &Application, cfg: Config) -> BarHandle {
     }
 
     // Root box lays panels along the bar's main axis (orientation set in apply).
-    let root = GtkBox::new(Orientation::Vertical, 4);
+    let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("bar");
     window.set_child(Some(&root));
 
