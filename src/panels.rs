@@ -2,7 +2,7 @@
 //! widget, a base update interval (seconds), and an `update` closure the central
 //! scheduler calls when the panel is due. No per-panel timers.
 
-use crate::config::{Actions, PanelConfig};
+use crate::config::{Actions, HeaderButton, HeaderSlot, PanelConfig};
 use crate::metrics::{
     Cpu, Disk, Net, Top, add_brightness, add_volume, battery, brightness, disk_usage, fan_rpm, gpu,
     mem_detail, temp_cpu, temp_gpu, temp_ssd, toggle_mute, volume,
@@ -80,6 +80,19 @@ thread_local! {
 pub fn set_tray(columns: i32, icon_size: i32) {
     TRAY_CFG.with(|c| c.set((columns.max(1), icon_size.max(1))));
 }
+
+thread_local! {
+    /// Header icon buttons (4 slots). Empty = default power-menu + lock.
+    static HEADER_CFG: RefCell<Vec<HeaderButton>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Set the header icon buttons. Call before (re)building panels.
+pub fn set_header_buttons(buttons: Vec<HeaderButton>) {
+    HEADER_CFG.with(|c| *c.borrow_mut() = buttons);
+}
+
+/// Sentinel command that opens the power popover (logout/reboot/shutdown).
+pub const HEADER_MENU: &str = "@menu";
 
 /// The current graph palette.
 fn pal() -> Palette {
@@ -1506,62 +1519,104 @@ fn set_clock_date(row: &GtkBox, fmt: &str) {
     }
 }
 
+/// The default header buttons (power-menu left of time, lock right of time),
+/// used when nothing is configured.
+fn default_header_buttons(actions: &Actions) -> Vec<HeaderButton> {
+    vec![
+        HeaderButton {
+            slot: HeaderSlot::TimeLeft,
+            icon: "\u{f011}".into(), // power
+            command: HEADER_MENU.into(),
+        },
+        HeaderButton {
+            slot: HeaderSlot::TimeRight,
+            icon: "\u{f023}".into(), // lock
+            command: actions.lock.clone(),
+        },
+    ]
+}
+
+/// Build one header icon button. `command` "@menu" opens the power popover
+/// (logout/reboot/shutdown); otherwise it runs as a shell command on click.
+fn header_button(icon: &str, command: &str, actions: &Actions) -> gtk::Button {
+    let btn = gtk::Button::new();
+    btn.set_label(icon);
+    btn.add_css_class("hbtn");
+    if command == HEADER_MENU {
+        btn.add_css_class("power");
+        let pop = gtk::Popover::new();
+        let menu = GtkBox::new(Orientation::Vertical, 2);
+        menu.add_css_class("menu");
+        for (label, cmd) in [
+            ("Logout", actions.logout.clone()),
+            ("Reboot", actions.reboot.clone()),
+            ("Shutdown", actions.shutdown.clone()),
+        ] {
+            let item = gtk::Button::with_label(label);
+            item.add_css_class("menu-item");
+            let pop = pop.clone();
+            item.connect_clicked(move |_| {
+                spawn(&cmd);
+                pop.popdown();
+            });
+            menu.append(&item);
+        }
+        pop.set_child(Some(&menu));
+        pop.set_parent(&btn);
+        pop.set_position(gtk::PositionType::Bottom);
+        let pop_open = pop.clone();
+        btn.connect_clicked(move |_| pop_open.popup());
+        // Unparent on destroy or GTK warns when the panel rebuilds.
+        btn.connect_destroy(move |_| pop.unparent());
+    } else {
+        let cmd = command.to_string();
+        btn.connect_clicked(move |_| spawn(&cmd));
+    }
+    btn
+}
+
 fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Actions) -> Panel {
     let root = panel_box();
     root.add_css_class("clock");
 
-    let top = gtk::CenterBox::new();
+    let buttons = HEADER_CFG.with(|c| c.borrow().clone());
+    let buttons = if buttons.is_empty() {
+        default_header_buttons(actions)
+    } else {
+        buttons
+    };
+    let slot_btn = |slot: HeaderSlot| {
+        buttons
+            .iter()
+            .find(|b| b.slot == slot && !b.icon.is_empty())
+            .map(|b| header_button(&b.icon, &b.command, actions))
+    };
 
-    // power menu button → popover with logout/reboot/shutdown
-    let power = gtk::Button::new();
-    power.set_label("\u{f011}"); // power-off glyph
-    power.add_css_class("hbtn");
-    power.add_css_class("power");
-    let pop = gtk::Popover::new();
-    let menu = GtkBox::new(Orientation::Vertical, 2);
-    menu.add_css_class("menu");
-    for (label, cmd) in [
-        ("Logout", actions.logout.clone()),
-        ("Reboot", actions.reboot.clone()),
-        ("Shutdown", actions.shutdown.clone()),
-    ] {
-        let item = gtk::Button::with_label(label);
-        item.add_css_class("menu-item");
-        let pop = pop.clone();
-        item.connect_clicked(move |_| {
-            spawn(&cmd);
-            pop.popdown();
-        });
-        menu.append(&item);
+    // Time row: [time-left] HH:MM·ampm [time-right]
+    let (time_widget, time, ampm) = clock_time_widget();
+    let time_row = gtk::CenterBox::new();
+    if let Some(w) = slot_btn(HeaderSlot::TimeLeft) {
+        time_row.set_start_widget(Some(&w));
     }
-    pop.set_child(Some(&menu));
-    pop.set_parent(&power);
-    pop.set_position(gtk::PositionType::Bottom);
-    let pop_open = pop.clone();
-    power.connect_clicked(move |_| pop_open.popup());
-    // Unparent the popover when the button is destroyed (panel rebuilds drop the
-    // button) — otherwise GTK warns about finalizing a button with a child left.
-    power.connect_destroy(move |_| pop.unparent());
+    time_row.set_center_widget(Some(&time_widget));
+    if let Some(w) = slot_btn(HeaderSlot::TimeRight) {
+        time_row.set_end_widget(Some(&w));
+    }
 
-    // lock button
-    let lock = gtk::Button::new();
-    lock.set_label("\u{f023}"); // lock glyph
-    lock.add_css_class("hbtn");
-    lock.add_css_class("lock");
-    let lock_cmd = actions.lock.clone();
-    lock.connect_clicked(move |_| spawn(&lock_cmd));
-
-    let (time_row, time, ampm) = clock_time_widget();
-
-    top.set_start_widget(Some(&power));
-    top.set_center_widget(Some(&time_row));
-    top.set_end_widget(Some(&lock));
-
+    // Date row: [date-left] Mon 25 May [date-right]
     let date = GtkBox::new(Orientation::Horizontal, 4);
     date.set_halign(gtk::Align::Center);
+    let date_row = gtk::CenterBox::new();
+    if let Some(w) = slot_btn(HeaderSlot::DateLeft) {
+        date_row.set_start_widget(Some(&w));
+    }
+    date_row.set_center_widget(Some(&date));
+    if let Some(w) = slot_btn(HeaderSlot::DateRight) {
+        date_row.set_end_widget(Some(&w));
+    }
 
-    root.append(&top);
-    root.append(&date);
+    root.append(&time_row);
+    root.append(&date_row);
 
     let update = Box::new(move || {
         set_clock_time(&time, &ampm, &time_fmt);

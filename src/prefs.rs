@@ -4,7 +4,9 @@
 //! drag a slider or pick a color. "Save" persists config.toml / the theme file.
 
 use crate::bar::BarHandle;
-use crate::config::{Align, BarLength, Edge, Layer, PanelConfig, TempSensor};
+use crate::config::{
+    Align, BarLength, Edge, HeaderButton, HeaderSlot, Layer, PanelConfig, TempSensor,
+};
 use crate::theme::{Theme, themes_dir};
 use gtk::gdk::RGBA;
 use gtk::glib;
@@ -40,6 +42,7 @@ pub fn open(handle: &BarHandle) {
     notebook.append_page(&theme_page(handle), Some(&Label::new(Some("Theme"))));
     notebook.append_page(&panels_page(handle), Some(&Label::new(Some("Panels"))));
     notebook.append_page(&temp_page(handle), Some(&Label::new(Some("Sensors"))));
+    notebook.append_page(&commands_page(handle), Some(&Label::new(Some("Commands"))));
 
     let window = Window::builder()
         .title("xerotop preferences")
@@ -303,38 +306,6 @@ fn general_page(handle: &BarHandle) -> GtkBox {
         h.apply();
     });
     page.append(&row("On-battery interval ×", &mult));
-
-    // Action commands (captured when their panel is built; Enter rebinds).
-    page.append(&command_row(
-        handle,
-        "Lock command",
-        &cfg.actions.lock,
-        |a, v| a.lock = v,
-    ));
-    page.append(&command_row(
-        handle,
-        "Logout command",
-        &cfg.actions.logout,
-        |a, v| a.logout = v,
-    ));
-    page.append(&command_row(
-        handle,
-        "Reboot command",
-        &cfg.actions.reboot,
-        |a, v| a.reboot = v,
-    ));
-    page.append(&command_row(
-        handle,
-        "Shutdown command",
-        &cfg.actions.shutdown,
-        |a, v| a.shutdown = v,
-    ));
-    page.append(&command_row(
-        handle,
-        "Volume mixer (right-click)",
-        &cfg.actions.mixer,
-        |a, v| a.mixer = v,
-    ));
 
     // Tray layout
     let tray_cols = SpinButton::with_range(1.0, 32.0, 1.0);
@@ -892,6 +863,143 @@ fn temp_sensor_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> Gt
     r.append(&del);
 
     r
+}
+
+// ---- Commands page ---------------------------------------------------------
+
+/// Replace/clear the header button for `slot` in the config vec.
+fn set_header_slot(
+    buttons: &mut Vec<HeaderButton>,
+    slot: HeaderSlot,
+    icon: String,
+    command: String,
+) {
+    buttons.retain(|b| b.slot != slot);
+    if !icon.is_empty() || !command.is_empty() {
+        buttons.push(HeaderButton {
+            slot,
+            icon,
+            command,
+        });
+    }
+}
+
+fn header_slot_row(handle: &BarHandle, slot: HeaderSlot, name: &str) -> GtkBox {
+    let (icon0, cmd0) = {
+        let cfg = handle.cfg.borrow();
+        cfg.header
+            .iter()
+            .find(|b| b.slot == slot)
+            .map(|b| (b.icon.clone(), b.command.clone()))
+            .unwrap_or_default()
+    };
+    let r = GtkBox::new(Orientation::Horizontal, 6);
+    let lbl = Label::new(Some(name));
+    lbl.set_xalign(0.0);
+    lbl.set_width_chars(9);
+    r.append(&lbl);
+
+    let glyph = Entry::new();
+    glyph.set_text(&icon0);
+    glyph.set_width_chars(3);
+    glyph.set_placeholder_text(Some("glyph"));
+    r.append(&glyph);
+
+    let cmd = Entry::new();
+    cmd.set_text(&cmd0);
+    cmd.set_hexpand(true);
+    cmd.set_placeholder_text(Some("command, or @menu, or blank"));
+    cmd.set_tooltip_text(Some("Press Enter to apply"));
+    r.append(&cmd);
+
+    // Store on edit (no apply per keystroke); apply on Enter from either field.
+    let store = {
+        let h = handle.clone();
+        let glyph_c = glyph.clone();
+        let cmd_c = cmd.clone();
+        move || {
+            set_header_slot(
+                &mut h.cfg.borrow_mut().header,
+                slot,
+                glyph_c.text().to_string(),
+                cmd_c.text().to_string(),
+            );
+        }
+    };
+    let s = store.clone();
+    glyph.connect_changed(move |_| s());
+    cmd.connect_changed(move |_| store());
+    let h = handle.clone();
+    glyph.connect_activate(move |_| h.apply());
+    let h = handle.clone();
+    cmd.connect_activate(move |_| h.apply());
+    r
+}
+
+fn commands_page(handle: &BarHandle) -> GtkBox {
+    // Seed default header buttons so the slots show what's currently on the bar.
+    if handle.cfg.borrow().header.is_empty() {
+        let lock = handle.cfg.borrow().actions.lock.clone();
+        handle.cfg.borrow_mut().header = vec![
+            HeaderButton {
+                slot: HeaderSlot::TimeLeft,
+                icon: "\u{f011}".into(),
+                command: crate::panels::HEADER_MENU.into(),
+            },
+            HeaderButton {
+                slot: HeaderSlot::TimeRight,
+                icon: "\u{f023}".into(),
+                command: lock,
+            },
+        ];
+    }
+
+    let page = page_box();
+    page.append(&Label::new(Some(
+        "Header icons — a glyph + command per slot. '@menu' = power popover; blank = none.",
+    )));
+    page.append(&header_slot_row(handle, HeaderSlot::TimeLeft, "time ◀"));
+    page.append(&header_slot_row(handle, HeaderSlot::TimeRight, "time ▶"));
+    page.append(&header_slot_row(handle, HeaderSlot::DateLeft, "date ◀"));
+    page.append(&header_slot_row(handle, HeaderSlot::DateRight, "date ▶"));
+
+    let sep = Label::new(Some("Commands (the power menu's items + the volume mixer)"));
+    sep.set_xalign(0.0);
+    sep.set_margin_top(10);
+    page.append(&sep);
+    page.append(&command_row(
+        handle,
+        "Lock",
+        &handle.cfg.borrow().actions.lock,
+        |a, v| a.lock = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Logout",
+        &handle.cfg.borrow().actions.logout,
+        |a, v| a.logout = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Reboot",
+        &handle.cfg.borrow().actions.reboot,
+        |a, v| a.reboot = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Shutdown",
+        &handle.cfg.borrow().actions.shutdown,
+        |a, v| a.shutdown = v,
+    ));
+    page.append(&command_row(
+        handle,
+        "Volume mixer",
+        &handle.cfg.borrow().actions.mixer,
+        |a, v| a.mixer = v,
+    ));
+
+    page.append(&save_bar(handle));
+    page
 }
 
 // ---- shared save bar -------------------------------------------------------

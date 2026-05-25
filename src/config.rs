@@ -176,6 +176,28 @@ pub struct TempConfig {
     pub sensors: Vec<TempSensor>,
 }
 
+/// One of the four header icon slots: left/right of the time, left/right of the
+/// date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeaderSlot {
+    TimeLeft,
+    TimeRight,
+    DateLeft,
+    DateRight,
+}
+
+/// A configurable header icon button in one of the four slots.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeaderButton {
+    pub slot: HeaderSlot,
+    /// Nerd Font glyph shown on the button.
+    pub icon: String,
+    /// Click action: "@menu" opens the power popover (logout/reboot/shutdown
+    /// from [actions]); anything else is run as a shell command.
+    pub command: String,
+}
+
 /// Shell commands run by the header buttons (one-shot, on click — not polled).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -266,6 +288,9 @@ pub struct Config {
     pub tray: TrayConfig,
     #[serde(default)]
     pub temp: TempConfig,
+    /// Header icon buttons (the 4 slots). Empty → default power-menu + lock.
+    #[serde(default, rename = "header_button")]
+    pub header: Vec<HeaderButton>,
     #[serde(default)]
     pub actions: Actions,
     #[serde(default = "default_panels")]
@@ -284,6 +309,7 @@ impl Default for Config {
             power: PowerConfig::default(),
             tray: TrayConfig::default(),
             temp: TempConfig::default(),
+            header: Vec::new(),
             actions: Actions::default(),
             panel: default_panels(),
         }
