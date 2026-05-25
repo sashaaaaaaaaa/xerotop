@@ -39,7 +39,7 @@ pub fn open(handle: &BarHandle) {
     notebook.append_page(&general_page(handle), Some(&Label::new(Some("General"))));
     notebook.append_page(&theme_page(handle), Some(&Label::new(Some("Theme"))));
     notebook.append_page(&panels_page(handle), Some(&Label::new(Some("Panels"))));
-    notebook.append_page(&temp_page(handle), Some(&Label::new(Some("Temp"))));
+    notebook.append_page(&temp_page(handle), Some(&Label::new(Some("Sensors"))));
 
     let window = Window::builder()
         .title("xerotop preferences")
@@ -697,22 +697,26 @@ fn panel_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> GtkBox {
 /// Default fill colors for newly-added sensors (cycled), matching the palette.
 const SENSOR_COLORS: [&str; 5] = ["#ff7366", "#c78cff", "#66ccff", "#66ff66", "#ffbf4d"];
 
+/// The auto-detected default sensor list (cpu/gpu/ssd + fan) as explicit entries.
+fn default_temp_sensors() -> Vec<TempSensor> {
+    crate::metrics::default_sensors()
+        .into_iter()
+        .map(|(chip, input, label, color)| TempSensor {
+            chip,
+            input,
+            label: label.to_string(),
+            color: color.to_string(),
+        })
+        .collect()
+}
+
 fn temp_page(handle: &BarHandle) -> GtkBox {
     // Nothing configured yet = auto-detect. Make those defaults visible/editable
     // by seeding the list with them, so adding a sensor appends instead of
     // silently replacing the whole auto set. (Reproduces the same sensors, so
     // the bar looks identical; only persisted if the user hits Save.)
     if handle.cfg.borrow().temp.sensors.is_empty() {
-        let seeded: Vec<TempSensor> = crate::metrics::default_sensors()
-            .into_iter()
-            .map(|(chip, input, label, color)| TempSensor {
-                chip,
-                input,
-                label: label.to_string(),
-                color: color.to_string(),
-            })
-            .collect();
-        handle.cfg.borrow_mut().temp.sensors = seeded;
+        handle.cfg.borrow_mut().temp.sensors = default_temp_sensors();
     }
 
     let page = page_box();
@@ -782,6 +786,23 @@ fn temp_page(handle: &BarHandle) -> GtkBox {
         populate_temp_list(&h, &list_c);
     });
     add_row.append(&add);
+
+    // Reset to the auto-detected defaults.
+    let reset = Button::with_label("Reset to defaults");
+    let h = handle.clone();
+    let list_c = list.clone();
+    let avg_c = avg.clone();
+    reset.connect_clicked(move |_| {
+        {
+            let mut c = h.cfg.borrow_mut();
+            c.temp.sensors = default_temp_sensors();
+            c.temp.average = false;
+        }
+        avg_c.set_active(false);
+        h.apply();
+        populate_temp_list(&h, &list_c);
+    });
+    add_row.append(&reset);
     page.append(&add_row);
 
     page.append(&save_bar(handle));
