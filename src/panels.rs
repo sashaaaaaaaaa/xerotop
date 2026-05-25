@@ -22,7 +22,6 @@ pub struct Panel {
     pub update: Box<dyn Fn()>,
 }
 
-const GRAPH_W: i32 = 134;
 const GRAPH_H: i32 = 24;
 const MINI_H: i32 = 14;
 const BAR_H: i32 = 10;
@@ -232,7 +231,11 @@ fn graph_widget(
         } else {
             AUTOSCALE_GAMMA.with(|c| c.get())
         };
-        let g = Graph::new(GRAPH_W, h, fixed, gamma, specs, iv, smooth);
+        // Width 0 + hexpand: fill the bar's width instead of imposing a fixed
+        // floor, so reducing bar thickness actually shrinks the graphs. The draw
+        // func already adapts to whatever width it's allocated.
+        let g = Graph::new(0, h, fixed, gamma, specs, iv, smooth);
+        g.area.set_hexpand(true);
         root.append(&g.area);
         g
     })
