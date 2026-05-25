@@ -110,9 +110,9 @@ pub fn keyboard_leds() -> Vec<(&'static str, bool)> {
         None
     };
     [
-        ("::capslock", "CAPS"),
+        ("::capslock", "CAP"),
         ("::numlock", "NUM"),
-        ("::scrolllock", "SCRL"),
+        ("::scrolllock", "SCR"),
     ]
     .into_iter()
     .filter_map(|(suffix, label)| state(suffix).map(|on| (label, on)))

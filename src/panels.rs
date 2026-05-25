@@ -97,6 +97,51 @@ pub fn set_header_buttons(buttons: Vec<HeaderButton>) {
 /// Sentinel command that opens the power popover (logout/reboot/shutdown).
 pub const HEADER_MENU: &str = "@menu";
 
+/// Curated Nerd Font glyphs offered in the Commands tab's glyph picker
+/// (label, glyph). Common things you'd bind to a header button.
+pub const HEADER_GLYPHS: &[(&str, &str)] = &[
+    ("power", "\u{f011}"),
+    ("lock", "\u{f023}"),
+    ("logout", "\u{f08b}"),
+    ("reboot", "\u{f021}"),
+    ("terminal", "\u{f489}"),
+    ("files", "\u{f07b}"),
+    ("browser", "\u{f0ac}"),
+    ("search", "\u{f002}"),
+    ("settings", "\u{f013}"),
+    ("home", "\u{f015}"),
+    ("music", "\u{f001}"),
+    ("camera", "\u{f030}"),
+    ("volume", "\u{f028}"),
+    ("brightness", "\u{f185}"),
+    ("calendar", "\u{f073}"),
+    ("keyboard", "\u{f11c}"),
+    ("display", "\u{f108}"),
+    ("bluetooth", "\u{f293}"),
+    ("wifi", "\u{f1eb}"),
+    ("bell", "\u{f0f3}"),
+];
+
+/// Best-guess glyph for a header command when its icon is left blank, so a
+/// button never renders empty. Matches the power popover and a few common
+/// commands by keyword.
+pub fn default_glyph(command: &str) -> &'static str {
+    let c = command.to_lowercase();
+    if command == HEADER_MENU || c.contains("poweroff") || c.contains("shutdown") {
+        "\u{f011}" // power
+    } else if c.contains("lock") {
+        "\u{f023}"
+    } else if c.contains("logout") || c.contains("terminate-session") {
+        "\u{f08b}"
+    } else if c.contains("reboot") {
+        "\u{f021}"
+    } else if c.contains("term") || c.contains("foot") || c.contains("kitty") || c.contains("alacritty") || c.contains("ghostty") {
+        "\u{f489}" // terminal
+    } else {
+        "" // unknown / blank → no glyph (don't force a placeholder dot)
+    }
+}
+
 /// The current graph palette.
 fn pal() -> Palette {
     PALETTE.with(|c| c.get())
@@ -480,19 +525,20 @@ fn uptime_panel(interval: f64) -> Panel {
 /// Keyboard lock LEDs (caps/num/scroll): lit = bright, off = dim.
 fn kbd_panel(interval: f64) -> Panel {
     let root = panel_box();
-    let row = GtkBox::new(Orientation::Horizontal, 10);
+    let row = GtkBox::new(Orientation::Horizontal, 4);
     let head = Label::new(Some("KBD"));
     head.add_css_class("label");
     head.set_xalign(0.0);
     head.set_hexpand(true);
     row.append(&head);
 
-    // One label per present LED, in keyboard_leds() order.
+    // One rectangular "LED" per present indicator, label inside; lit when active.
     let labels: Vec<Label> = keyboard_leds()
         .iter()
         .map(|(name, _)| {
             let l = Label::new(Some(name));
-            l.add_css_class("sub");
+            l.add_css_class("led");
+            l.set_valign(gtk::Align::Center);
             row.append(&l);
             l
         })
@@ -501,9 +547,11 @@ fn kbd_panel(interval: f64) -> Panel {
 
     let update = Box::new(move || {
         for ((_, on), lbl) in keyboard_leds().iter().zip(&labels) {
-            lbl.remove_css_class("value");
-            lbl.remove_css_class("sub");
-            lbl.add_css_class(if *on { "value" } else { "sub" });
+            if *on {
+                lbl.add_css_class("led-on");
+            } else {
+                lbl.remove_css_class("led-on");
+            }
         }
     });
     Panel {
@@ -587,28 +635,67 @@ fn weather_panel() -> Panel {
     cond.set_visible(show_cond);
     let spacer = GtkBox::new(Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
+    // [🌡 temp] and [💧 humidity] groups — each glyph its own accent color, the
+    // numbers in full foreground (not muted).
+    let thermo = Label::new(None);
     let temp = Label::new(Some("--"));
     temp.add_css_class("value");
-    temp.set_xalign(1.0);
+    let droplet = Label::new(None);
+    let humid = Label::new(None);
+    humid.add_css_class("value");
+    let temp_box = GtkBox::new(Orientation::Horizontal, 2);
+    temp_box.append(&thermo);
+    temp_box.append(&temp);
+    let humid_box = GtkBox::new(Orientation::Horizontal, 2);
+    humid_box.append(&droplet);
+    humid_box.append(&humid);
     row.append(&icon);
     row.append(&cond);
     row.append(&spacer);
-    row.append(&temp);
+    row.append(&temp_box);
+    row.append(&humid_box);
     root.append(&row);
 
     let host = weather_host();
     let _ = host.req_tx.send(weather_req()); // push current config → refetch if changed
 
-    let (icon_c, cond_c, temp_c, root_c) = (icon.clone(), cond.clone(), temp.clone(), root.clone());
+    // Static accent-colored glyphs: thermometer (warm) + droplet (cool).
+    thermo.set_markup("<span foreground='#ff7366'>\u{f2c9}</span>");
+    let (icon_c, cond_c, thermo_c, droplet_c, humid_c, temp_c, root_c) = (
+        icon.clone(),
+        cond.clone(),
+        thermo.clone(),
+        droplet.clone(),
+        humid.clone(),
+        temp.clone(),
+        root.clone(),
+    );
     let render: WeatherRenderFn = Rc::new(move |w: &crate::weather::Weather| {
         if w.ok {
-            icon_c.set_text(&w.icon);
+            // condition glyph tinted by weather type (sun=yellow, cloud=grey…)
+            icon_c.set_markup(&format!(
+                "<span foreground='{}'>{}</span>",
+                gtk::glib::markup_escape_text(&w.icon_color),
+                gtk::glib::markup_escape_text(&w.icon),
+            ));
             cond_c.set_text(&w.cond);
+            thermo_c.set_markup("<span foreground='#ff7366'>\u{f2c9}</span>");
             temp_c.set_text(&w.temp);
+            // droplet glyph + humidity %; hide both if wttr didn't return it
+            if w.humidity.is_empty() {
+                droplet_c.set_text("");
+                humid_c.set_text("");
+            } else {
+                droplet_c.set_markup("<span foreground='#66ccff'>\u{e373}</span>");
+                humid_c.set_text(&w.humidity);
+            }
             root_c.set_tooltip_text(Some(&w.report));
         } else {
             icon_c.set_text("\u{e374}");
             cond_c.set_text("");
+            thermo_c.set_text("");
+            droplet_c.set_text("");
+            humid_c.set_text("");
             temp_c.set_text("--");
             root_c.set_tooltip_text(Some("weather unavailable"));
         }
@@ -1829,6 +1916,9 @@ fn default_header_buttons(actions: &Actions) -> Vec<HeaderButton> {
 fn header_button(icon: &str, command: &str, color: &str, actions: &Actions) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.add_css_class("hbtn");
+    // Blank icon → fall back to a command-appropriate glyph so it's never empty.
+    let icon = if icon.is_empty() { default_glyph(command) } else { icon };
+    let icon = &icon;
     if color.is_empty() {
         btn.set_label(icon);
     } else {
@@ -1904,6 +1994,9 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
     let date = GtkBox::new(Orientation::Horizontal, 4);
     date.set_halign(gtk::Align::Center);
     let date_row = gtk::CenterBox::new();
+    // Reserve the icon-button height always, so toggling a date glyph on/off
+    // doesn't change the row height (it'd otherwise jump ~8px taller).
+    date_row.add_css_class("date-row");
     if let Some(w) = slot_btn(HeaderSlot::DateLeft) {
         date_row.set_start_widget(Some(&w));
     }

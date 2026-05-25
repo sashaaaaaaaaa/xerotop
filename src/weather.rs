@@ -7,10 +7,12 @@ use std::time::Duration;
 
 #[derive(Clone, Default)]
 pub struct Weather {
-    pub icon: String,   // Nerd Font weather glyph
-    pub temp: String,   // e.g. "+72°F"
-    pub cond: String,   // e.g. "Partly cloudy"
-    pub report: String, // multi-line detail for the tooltip
+    pub icon: String,       // Nerd Font weather glyph
+    pub icon_color: String, // hex accent for the glyph (sun=yellow, etc.)
+    pub temp: String,       // e.g. "+72°F"
+    pub cond: String,     // e.g. "Partly cloudy"
+    pub humidity: String, // e.g. "45%"
+    pub report: String,   // multi-line detail for the tooltip
     pub ok: bool,
 }
 
@@ -42,6 +44,27 @@ fn glyph_for(cond: &str) -> &'static str {
         "\u{e30d}"
     } else {
         "\u{e371}" // generic / unknown
+    }
+}
+
+/// Accent color (hex) for a condition glyph, so sun reads yellow, clouds grey,
+/// rain blue, etc.
+fn color_for(cond: &str) -> &'static str {
+    let c = cond.to_lowercase();
+    if c.contains("thunder") || c.contains("storm") {
+        "#bb9af7" // violet
+    } else if c.contains("snow") || c.contains("sleet") || c.contains("blizzard") || c.contains("ice") {
+        "#e6f0ff" // near-white
+    } else if c.contains("rain") || c.contains("drizzle") || c.contains("shower") {
+        "#66ccff" // blue
+    } else if c.contains("fog") || c.contains("mist") || c.contains("haze") {
+        "#9aa5b1" // grey
+    } else if c.contains("overcast") || c.contains("cloud") {
+        "#c0caf5" // light grey
+    } else if c.contains("clear") || c.contains("sunny") || c.contains("sun") {
+        "#ffcc33" // yellow
+    } else {
+        "#c0caf5" // foreground-ish
     }
 }
 
@@ -91,8 +114,10 @@ fn fetch(req: &WeatherReq) -> Option<Weather> {
     }
     Some(Weather {
         icon: glyph_for(cond).to_string(),
+        icon_color: color_for(cond).to_string(),
         temp: temp.to_string(),
         cond: cond.to_string(),
+        humidity: humidity.to_string(),
         report,
         ok: true,
     })

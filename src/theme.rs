@@ -37,6 +37,8 @@ pub struct Theme {
     pub amber: String,
     pub red: String,
     pub violet: String,
+    /// Keyboard-LED "on"/glow color.
+    pub led_on: String,
 }
 
 impl Default for Theme {
@@ -57,6 +59,7 @@ impl Default for Theme {
             amber: "#ffbf4d".into(),
             red: "#ff7366".into(),
             violet: "#c78cff".into(),
+            led_on: "#5fd75f".into(),
         }
     }
 }
@@ -134,6 +137,9 @@ window.xerotop {{ background-color: transparent; }}
 .panel {{ padding: 0 4px; }}
 .meter {{ padding: 1px 4px; }}
 .rule {{ background-color: rgba(255,255,255,0.12); min-height: 1px; min-width: 1px; margin: 2px 0; }}
+/* glyph picker in prefs must use the bar font (default-font prefs window has no
+   Nerd Font glyphs) and a larger size so the little glyphs are legible */
+.glyphpick, .glyphpick * {{ font-family: "{font}", monospace; }}
 .label {{ font-weight: bold; color: {label}; }}
 /* tabular (fixed-width) digits so a changing number keeps the same glyph
    advance — combined with width_chars on the value labels, a value update is
@@ -153,6 +159,19 @@ window.xerotop {{ background-color: transparent; }}
 .clock-time {{ font-weight: bold; font-size: {large}px; color: {label}; }}
 .clock-ampm {{ font-size: {small}px; color: {value}; }}
 .clock-date {{ font-size: {small}px; color: {value}; }}
+/* reserve the header-glyph height so enabling a date icon doesn't grow the row */
+.date-row {{ min-height: 20px; }}
+/* keyboard indicators drawn as little rectangular LEDs: dim when off, glowing
+   green when the function is active, with the label etched inside. */
+.led {{
+  font-size: {small}px; font-weight: bold; padding: 0 3px; min-height: 11px;
+  border-radius: 2px; border: 1px solid rgba(255,255,255,0.15);
+  background-color: rgba(255,255,255,0.04); color: {muted};
+}}
+.led-on {{
+  color: #06140a; background-color: {led}; border-color: {led_border};
+  box-shadow: 0 0 5px 1px {led};
+}}
 .clock-daynum {{ font-weight: bold; font-size: {normal}px; color: {label}; }}
 .hbtn {{ background: transparent; border: none; box-shadow: none; outline: none; min-height: 0; min-width: 0; padding: 0 4px; color: {label}; font-size: 17px; }}
 .hbtn:hover {{ color: {bright}; }}
@@ -175,6 +194,8 @@ window.xerotop {{ background-color: transparent; }}
             lock_hi = lighten(&self.accent_lock, 0.25),
             power = norm(&self.accent_power),
             power_hi = lighten(&self.accent_power, 0.25),
+            led = norm(&self.led_on),
+            led_border = lighten(&self.led_on, 0.25),
         )
     }
 }
@@ -197,23 +218,20 @@ pub fn themes_dir() -> PathBuf {
 /// Resolve a theme by name: `"default"`/empty → built-in; otherwise load
 /// `themes/<name>.toml`, falling back to the built-in on any error.
 pub fn resolve(name: &str) -> Theme {
-    if name.is_empty() || name == "default" {
-        return Theme::default();
-    }
+    let name = if name.is_empty() { "default" } else { name };
     if !is_valid_name(name) {
         eprintln!("xerotop: invalid theme name '{name}'; using default");
         return Theme::default();
     }
+    // Load themes/<name>.toml if present — including "default", so edits to the
+    // default theme persist. Missing file → the built-in default.
     let path = themes_dir().join(format!("{name}.toml"));
     match std::fs::read_to_string(&path) {
         Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
             eprintln!("xerotop: theme '{name}' parse error ({e}); using default");
             Theme::default()
         }),
-        Err(_) => {
-            eprintln!("xerotop: theme '{name}' not found; using default");
-            Theme::default()
-        }
+        Err(_) => Theme::default(),
     }
 }
 

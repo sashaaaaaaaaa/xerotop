@@ -14,8 +14,8 @@ use gtk::pango::FontDescription;
 use gtk::prelude::*;
 use gtk::{
     Box as GtkBox, Button, CheckButton, ColorDialog, ColorDialogButton, DropDown, Entry,
-    FontDialog, FontDialogButton, Label, ListBox, Notebook, Orientation, Scale, SpinButton, Switch,
-    Window,
+    FontDialog, FontDialogButton, Label, ListBox, ListItem, Notebook, Orientation, Scale,
+    SignalListItemFactory, SpinButton, StringObject, Switch, Window,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -390,7 +390,7 @@ type Getter = fn(&Theme) -> String;
 type Setter = fn(&mut Theme, String);
 
 #[allow(clippy::type_complexity)]
-const COLOR_FIELDS: [(&str, Getter, Setter); 11] = [
+const COLOR_FIELDS: [(&str, Getter, Setter); 12] = [
     (
         "Background",
         |t| t.background.clone(),
@@ -418,6 +418,7 @@ const COLOR_FIELDS: [(&str, Getter, Setter); 11] = [
     ("Graph amber", |t| t.amber.clone(), |t, v| t.amber = v),
     ("Graph red", |t| t.red.clone(), |t, v| t.red = v),
     ("Graph violet", |t| t.violet.clone(), |t, v| t.violet = v),
+    ("Keyboard LED", |t| t.led_on.clone(), |t, v| t.led_on = v),
 ];
 
 fn theme_page(handle: &BarHandle) -> GtkBox {
@@ -451,27 +452,30 @@ fn theme_page(handle: &BarHandle) -> GtkBox {
     });
     page.append(&row("Font", &font_btn));
 
-    // Font-size tiers (gkrellm-style small/normal/large).
-    let font_size_spin = |get: fn(&Theme) -> i32, set: fn(&mut Theme, i32)| {
+    // Font-size tiers (gkrellm-style small/normal/large). These are config-level
+    // overrides — they win over the theme's defaults and persist independently,
+    // so switching themes doesn't wipe your sizing. Initial value = override if
+    // set, else the active theme's size.
+    let font_size_spin = |theme_get: fn(&Theme) -> i32,
+                          cfg_get: fn(&crate::config::FontConfig) -> Option<i32>,
+                          cfg_set: fn(&mut crate::config::FontConfig, Option<i32>)| {
         let sp = SpinButton::with_range(4.0, 96.0, 1.0);
-        sp.set_value(get(&handle.theme.borrow()) as f64);
+        let initial = cfg_get(&handle.cfg.borrow().font).unwrap_or_else(|| theme_get(&handle.theme.borrow()));
+        sp.set_value(initial as f64);
         let h = handle.clone();
         let ld = loading.clone();
         sp.connect_value_changed(move |s| {
             if ld.get() {
                 return;
             }
-            {
-                let mut t = h.theme.borrow_mut();
-                set(&mut t, s.value() as i32);
-            }
+            cfg_set(&mut h.cfg.borrow_mut().font, Some(s.value() as i32));
             h.apply();
         });
         sp
     };
-    let f_small = font_size_spin(|t| t.font_small, |t, v| t.font_small = v);
-    let f_normal = font_size_spin(|t| t.font_normal, |t, v| t.font_normal = v);
-    let f_large = font_size_spin(|t| t.font_large, |t, v| t.font_large = v);
+    let f_small = font_size_spin(|t| t.font_small, |f| f.small, |f, v| f.small = v);
+    let f_normal = font_size_spin(|t| t.font_normal, |f| f.normal, |f, v| f.normal = v);
+    let f_large = font_size_spin(|t| t.font_large, |f| f.large, |f, v| f.large = v);
     page.append(&row("Font small (sub, date)", &f_small));
     page.append(&row("Font normal (labels, values)", &f_normal));
     page.append(&row("Font large (clock)", &f_large));
@@ -999,11 +1003,77 @@ fn header_slot_row(handle: &BarHandle, slot: HeaderSlot, name: &str) -> GtkBox {
     lbl.set_width_chars(9);
     r.append(&lbl);
 
-    let glyph = Entry::new();
-    glyph.set_text(&icon0);
-    glyph.set_width_chars(3);
-    glyph.set_placeholder_text(Some("glyph"));
-    r.append(&glyph);
+    // Effective saved glyph: blank icon falls back to the command's default
+    // (power for @menu, lock for a lock command, …; "" for blank/unknown).
+    let icon0 = if icon0.is_empty() {
+        crate::panels::default_glyph(&cmd0).to_string()
+    } else {
+        icon0
+    };
+
+    // Glyph picker rows: "none" first, the common glyphs, then "custom…" last.
+    let glyphs = crate::panels::HEADER_GLYPHS;
+    let none_idx: u32 = 0;
+    let custom_idx = (glyphs.len() + 1) as u32; // after none + all glyphs
+    let mut rows: Vec<String> = vec!["— none —".to_string()];
+    rows.extend(glyphs.iter().map(|(n, g)| format!("{g}  {n}")));
+    rows.push("custom…".to_string());
+    let picker = DropDown::from_strings(&rows.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+    picker.add_css_class("glyphpick"); // force the Nerd Font
+    picker.set_tooltip_text(Some("Pick a glyph, 'none' to disable, or 'custom…' to type one"));
+    // Custom factory: enlarge just the leading glyph (rows are "<glyph>  name"),
+    // leaving the name at the normal font size.
+    let factory = SignalListItemFactory::new();
+    factory.connect_setup(|_, item| {
+        let label = Label::new(None);
+        label.set_xalign(0.0);
+        if let Some(item) = item.downcast_ref::<ListItem>() {
+            item.set_child(Some(&label));
+        }
+    });
+    factory.connect_bind(|_, item| {
+        let Some(item) = item.downcast_ref::<ListItem>() else { return };
+        let text = item
+            .item()
+            .and_then(|o| o.downcast::<StringObject>().ok())
+            .map(|s| s.string().to_string())
+            .unwrap_or_default();
+        let Some(label) = item.child().and_downcast::<Label>() else { return };
+        // "<glyph>  name" → big glyph + normal name; other rows render plain.
+        let mut chars = text.chars();
+        let first = chars.next();
+        let rest: String = chars.collect();
+        if let Some(g) = first.filter(|_| rest.starts_with("  ")) {
+            label.set_markup(&format!(
+                "<span size='180%'>{}</span>{}",
+                glib::markup_escape_text(&g.to_string()),
+                glib::markup_escape_text(&rest),
+            ));
+        } else {
+            label.set_text(&text);
+        }
+    });
+    picker.set_factory(Some(&factory));
+
+    let custom = Entry::new();
+    custom.add_css_class("glyphpick");
+    custom.set_width_chars(4);
+    custom.set_placeholder_text(Some("glyph"));
+
+    // Initial selection: empty → none; a known glyph → its row; else → custom.
+    if icon0.is_empty() {
+        picker.set_selected(none_idx);
+        custom.set_visible(false);
+    } else if let Some(i) = glyphs.iter().position(|(_, g)| *g == icon0) {
+        picker.set_selected(i as u32 + 1); // +1 for the leading "none" row
+        custom.set_visible(false);
+    } else {
+        picker.set_selected(custom_idx);
+        custom.set_text(&icon0);
+        custom.set_visible(true);
+    }
+    r.append(&picker);
+    r.append(&custom);
 
     let cmd = Entry::new();
     cmd.set_text(&cmd0);
@@ -1020,24 +1090,58 @@ fn header_slot_row(handle: &BarHandle, slot: HeaderSlot, name: &str) -> GtkBox {
     }));
     r.append(&color);
 
-    // Store on edit (no apply per keystroke); apply on Enter / color pick.
+    // The effective glyph: the custom entry when "custom…" is selected,
+    // otherwise the picked row's glyph.
+    let glyph_value = {
+        let picker_c = picker.clone();
+        let custom_c = custom.clone();
+        move || -> String {
+            let sel = picker_c.selected();
+            if sel == none_idx {
+                String::new()
+            } else if sel == custom_idx {
+                custom_c.text().to_string()
+            } else {
+                // rows are offset by 1 (leading "none")
+                glyphs.get(sel as usize - 1).map(|(_, g)| g.to_string()).unwrap_or_default()
+            }
+        }
+    };
     let store = {
         let h = handle.clone();
-        let glyph_c = glyph.clone();
         let cmd_c = cmd.clone();
         let color_c = color.clone();
+        let glyph_value = glyph_value.clone();
         move || {
             set_header_slot(
                 &mut h.cfg.borrow_mut().header,
                 slot,
-                glyph_c.text().to_string(),
+                glyph_value(),
                 cmd_c.text().to_string(),
                 rgba_to_hex(&color_c.rgba()),
             );
         }
     };
+
+    // Picking a row: show the custom entry only for "custom…", then store+apply.
     let s = store.clone();
-    glyph.connect_changed(move |_| s());
+    let h = handle.clone();
+    let custom_c = custom.clone();
+    picker.connect_selected_notify(move |p| {
+        custom_c.set_visible(p.selected() == custom_idx);
+        s();
+        h.apply();
+    });
+    // Typing a custom glyph: store live, apply on Enter / focus-out.
+    let s = store.clone();
+    custom.connect_changed(move |_| s());
+    let h = handle.clone();
+    custom.connect_activate(move |_| h.apply());
+    let h = handle.clone();
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| h.apply());
+    custom.add_controller(focus);
+
     let s = store.clone();
     cmd.connect_changed(move |_| s());
     let h = handle.clone();
@@ -1045,8 +1149,6 @@ fn header_slot_row(handle: &BarHandle, slot: HeaderSlot, name: &str) -> GtkBox {
         store();
         h.apply();
     });
-    let h = handle.clone();
-    glyph.connect_activate(move |_| h.apply());
     let h = handle.clone();
     cmd.connect_activate(move |_| h.apply());
     r
@@ -1156,5 +1258,13 @@ fn save_config(handle: &BarHandle) -> std::io::Result<std::path::PathBuf> {
     }
     let body = toml::to_string_pretty(&*handle.cfg.borrow()).map_err(std::io::Error::other)?;
     std::fs::write(&path, body)?;
+    // Also persist the active theme to its file, so font-size/color edits to
+    // the current theme (incl. "default") survive a restart — config.toml only
+    // stores the theme *name*.
+    let name = handle.cfg.borrow().theme.clone();
+    let name = if name.is_empty() { "default".to_string() } else { name };
+    if crate::theme::is_valid_name(&name) {
+        let _ = save_theme_file(&name, &handle.theme.borrow());
+    }
     Ok(path)
 }

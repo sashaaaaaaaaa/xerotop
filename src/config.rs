@@ -291,6 +291,15 @@ fn de_secs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
     })
 }
 
+/// Font-size overrides (px). `None` = use the active theme's size for that tier.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FontConfig {
+    pub small: Option<i32>,
+    pub normal: Option<i32>,
+    pub large: Option<i32>,
+}
+
 fn default_panels() -> Vec<PanelConfig> {
     [
         "header", "cpu", "mem", "gpu", "disk", "net", "temp", "bat", "vol", "bri", "top", "win",
@@ -321,6 +330,10 @@ pub struct Config {
     pub theme: String,
     #[serde(default)]
     pub bar: BarConfig,
+    /// Optional font-size overrides that win over the theme's defaults, so
+    /// changing sizes doesn't require editing (or get wiped by) the theme.
+    #[serde(default)]
+    pub font: FontConfig,
     #[serde(default)]
     pub power: PowerConfig,
     #[serde(default)]
@@ -347,6 +360,7 @@ impl Default for Config {
         Self {
             theme: default_theme(),
             bar: BarConfig::default(),
+            font: FontConfig::default(),
             power: PowerConfig::default(),
             tray: TrayConfig::default(),
             temp: TempConfig::default(),

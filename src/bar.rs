@@ -78,8 +78,19 @@ impl BarHandle {
         panels::set_header_buttons(cfg.header.clone());
 
         // Generate the whole stylesheet from the theme (colors + font); the bar
-        // background alpha comes from config opacity.
-        self.theme_css.load_from_data(&theme.css(cfg.bar.opacity));
+        // background alpha comes from config opacity. Config font-size overrides
+        // (if any) win over the theme's defaults.
+        let mut eff = theme.clone();
+        if let Some(v) = cfg.font.small {
+            eff.font_small = v;
+        }
+        if let Some(v) = cfg.font.normal {
+            eff.font_normal = v;
+        }
+        if let Some(v) = cfg.font.large {
+            eff.font_large = v;
+        }
+        self.theme_css.load_from_data(&eff.css(cfg.bar.opacity));
         drop(theme);
 
         let monitor = target_monitor(&cfg);
