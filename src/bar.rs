@@ -6,6 +6,7 @@
 use crate::config::{Config, Edge};
 use crate::panels::{self, Panel};
 use crate::power;
+use crate::theme::Theme;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Box as GtkBox, Orientation, glib};
 use gtk4_layer_shell::{Edge as LsEdge, Layer, LayerShell};
@@ -19,6 +20,8 @@ use std::time::{Duration, Instant};
 pub struct BarHandle {
     pub window: ApplicationWindow,
     pub cfg: Rc<RefCell<Config>>,
+    /// Active visual theme; edited live by the prefs GUI, applied by `apply()`.
+    pub theme: Rc<RefCell<Theme>>,
     root: GtkBox,
     theme_css: gtk::CssProvider,
     /// Bumped on every `apply()`; the live scheduler breaks when it sees a newer
@@ -62,13 +65,14 @@ impl BarHandle {
     /// orientation, panels and scheduler. Safe to call any number of times.
     pub fn apply(&self) {
         let cfg = self.cfg.borrow();
+        let theme = self.theme.borrow();
         panels::set_gamma(cfg.bar.graph_gamma);
+        panels::set_palette(theme.palette());
 
-        // Live theme/opacity override (above the base stylesheet's .bar rule).
-        self.theme_css.load_from_data(&format!(
-            ".bar {{ background-color: rgba(16,16,20,{:.3}); }}",
-            cfg.bar.opacity.clamp(0.0, 1.0)
-        ));
+        // Generate the whole stylesheet from the theme (colors + font); the bar
+        // background alpha comes from config opacity.
+        self.theme_css.load_from_data(&theme.css(cfg.bar.opacity));
+        drop(theme);
 
         // Pin to the configured output if it exists; monitor < 0 (or out of
         // range) means "let the compositor decide".
@@ -171,9 +175,11 @@ pub fn build(app: &Application, cfg: Config) -> BarHandle {
     root.add_css_class("bar");
     window.set_child(Some(&root));
 
+    let theme = crate::theme::resolve(&cfg.theme);
     let handle = BarHandle {
         window: window.clone(),
         cfg: Rc::new(RefCell::new(cfg)),
+        theme: Rc::new(RefCell::new(theme)),
         root,
         theme_css,
         generation: Rc::new(Cell::new(0)),

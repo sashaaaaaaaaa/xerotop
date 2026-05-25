@@ -27,19 +27,57 @@ const GRAPH_H: i32 = 24;
 const MINI_H: i32 = 14;
 const BAR_H: i32 = 10;
 
-const GREEN: Rgba = (0.40, 1.0, 0.40, 0.9);
-const CYAN: Rgba = (0.40, 0.8, 1.0, 0.9);
-const AMBER: Rgba = (1.0, 0.75, 0.30, 0.9);
-const RED: Rgba = (1.0, 0.45, 0.40, 0.9);
-const VIOLET: Rgba = (0.78, 0.55, 1.0, 0.9);
-const PALE: Rgba = (0.70, 0.92, 1.0, 0.85); // MEM cache overlay line
+/// Graph drawing palette — a named set of colors reused across panels. Comes
+/// from the active theme; the defaults reproduce the original look.
+#[derive(Clone, Copy)]
+pub struct Palette {
+    pub green: Rgba,
+    pub cyan: Rgba,
+    pub amber: Rgba,
+    pub red: Rgba,
+    pub violet: Rgba,
+    pub pale: Rgba, // MEM cache overlay line
+}
 
-/// Gamma for autoscaled graphs (cpu/gpu/net/disk), set once from config.
-static AUTOSCALE_GAMMA: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+impl Default for Palette {
+    fn default() -> Self {
+        Self {
+            green: (0.40, 1.0, 0.40, 0.9),
+            cyan: (0.40, 0.8, 1.0, 0.9),
+            amber: (1.0, 0.75, 0.30, 0.9),
+            red: (1.0, 0.45, 0.40, 0.9),
+            violet: (0.78, 0.55, 1.0, 0.9),
+            pale: (0.70, 0.92, 1.0, 0.85),
+        }
+    }
+}
 
-/// Set the autoscaled-graph gamma. Call before building panels.
+thread_local! {
+    /// Gamma for autoscaled graphs (cpu/gpu/net/disk).
+    static AUTOSCALE_GAMMA: std::cell::Cell<f64> = const { std::cell::Cell::new(1.4) };
+    static PALETTE: std::cell::Cell<Palette> = const { std::cell::Cell::new(Palette {
+        green: (0.40, 1.0, 0.40, 0.9),
+        cyan: (0.40, 0.8, 1.0, 0.9),
+        amber: (1.0, 0.75, 0.30, 0.9),
+        red: (1.0, 0.45, 0.40, 0.9),
+        violet: (0.78, 0.55, 1.0, 0.9),
+        pale: (0.70, 0.92, 1.0, 0.85),
+    }) };
+}
+
+/// Set the autoscaled-graph gamma. Call before (re)building panels.
 pub fn set_gamma(g: f64) {
-    let _ = AUTOSCALE_GAMMA.set(g);
+    AUTOSCALE_GAMMA.with(|c| c.set(g));
+}
+
+/// Set the graph palette from the active theme. Call before (re)building panels.
+pub fn set_palette(p: Palette) {
+    PALETTE.with(|c| c.set(p));
+}
+
+/// The current graph palette.
+fn pal() -> Palette {
+    PALETTE.with(|c| c.get())
 }
 
 /// Build a panel from its config, or None for an unknown type.
@@ -60,13 +98,21 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             let (tf, df) = clock_fmts();
             Some(clock_panel(iv, tf, df))
         }
-        "cpu" => Some(metric_panel("CPU", iv, cfg.graph, GREEN, smooth, None, {
-            let cpu = Rc::new(RefCell::new(Cpu::new()));
-            move || {
-                let p = cpu.borrow_mut().sample();
-                (format!("{p:.0}%"), p)
-            }
-        })),
+        "cpu" => Some(metric_panel(
+            "CPU",
+            iv,
+            cfg.graph,
+            pal().green,
+            smooth,
+            None,
+            {
+                let cpu = Rc::new(RefCell::new(Cpu::new()));
+                move || {
+                    let p = cpu.borrow_mut().sample();
+                    (format!("{p:.0}%"), p)
+                }
+            },
+        )),
         "mem" => Some(mem_panel(iv, cfg.graph, smooth)),
         "temp" => Some(temp_panel(iv, cfg.graph, smooth)),
         "top" => Some(top_panel(iv)),
@@ -77,7 +123,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         "tray" => Some(tray_panel()),
         "bat" | "battery" => Some(bar_panel(
             iv,
-            RED,
+            pal().red,
             || match battery() {
                 Some((p, status)) => {
                     let icon = if status == "Charging" {
@@ -102,7 +148,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         )),
         "vol" | "volume" => Some(bar_panel(
             iv,
-            GREEN,
+            pal().green,
             || match volume() {
                 Some((p, muted)) => {
                     let glyph = if muted || p <= 0.0 {
@@ -126,7 +172,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         )),
         "bri" | "brightness" => Some(bar_panel(
             iv,
-            AMBER,
+            pal().amber,
             || match brightness() {
                 Some(p) => ("\u{f185}".to_string(), format!("{p:.0}%"), p), // sun
                 None => ("\u{f185}".to_string(), "--".to_string(), 0.0),
@@ -184,7 +230,7 @@ fn graph_widget(
         let gamma = if fixed.is_some() {
             1.0
         } else {
-            *AUTOSCALE_GAMMA.get().unwrap_or(&1.4)
+            AUTOSCALE_GAMMA.with(|c| c.get())
         };
         let g = Graph::new(GRAPH_W, h, fixed, gamma, specs, iv, smooth);
         root.append(&g.area);
@@ -240,7 +286,7 @@ fn mem_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let g = graph_widget(
         &root,
         GRAPH_H,
-        &[(CYAN, true), (PALE, false)],
+        &[(pal().cyan, true), (pal().pale, false)],
         Some(100.0),
         interval,
         smooth,
@@ -340,7 +386,7 @@ fn net_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let dn = graph_widget(
         &root,
         MINI_H,
-        &[(CYAN, true)],
+        &[(pal().cyan, true)],
         None,
         interval,
         smooth,
@@ -349,7 +395,7 @@ fn net_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let up = graph_widget(
         &root,
         MINI_H,
-        &[(AMBER, true)],
+        &[(pal().amber, true)],
         None,
         interval,
         smooth,
@@ -380,7 +426,7 @@ fn gpu_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let g = graph_widget(
         &root,
         GRAPH_H,
-        &[(VIOLET, true)],
+        &[(pal().violet, true)],
         None,
         interval,
         smooth,
@@ -414,7 +460,7 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let rd = graph_widget(
         &root,
         MINI_H,
-        &[(CYAN, true)],
+        &[(pal().cyan, true)],
         None,
         interval,
         smooth,
@@ -423,7 +469,7 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     let wr = graph_widget(
         &root,
         MINI_H,
-        &[(AMBER, true)],
+        &[(pal().amber, true)],
         None,
         interval,
         smooth,
@@ -950,9 +996,9 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     root.append(&head);
 
     let sensors: [(&str, TempSrc, Rgba); 3] = [
-        ("cpu", temp_cpu, RED),
-        ("gpu", temp_gpu, VIOLET),
-        ("ssd", temp_ssd, CYAN),
+        ("cpu", temp_cpu, pal().red),
+        ("gpu", temp_gpu, pal().violet),
+        ("ssd", temp_ssd, pal().cyan),
     ];
     let mut rows: Vec<(Option<Graph>, Label, TempSrc)> = Vec::new();
     for (name, src, color) in sensors {

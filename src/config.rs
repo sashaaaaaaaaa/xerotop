@@ -143,6 +143,9 @@ fn default_panels() -> Vec<PanelConfig> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    /// Name of the theme to load (`themes/<name>.toml`); "default" = built-in.
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default)]
     pub bar: BarConfig,
     #[serde(default)]
@@ -153,9 +156,14 @@ pub struct Config {
     pub panel: Vec<PanelConfig>,
 }
 
+fn default_theme() -> String {
+    "default".into()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
             bar: BarConfig::default(),
             power: PowerConfig::default(),
             actions: Actions::default(),
@@ -189,6 +197,10 @@ pub fn load() -> Config {
 }
 
 pub const DEFAULT_TOML: &str = r#"# xerotop — system monitor config (TOML, stable by design)
+
+# Visual theme (colors + font). "default" = built-in; any other name loads
+# ~/.config/xerotop/themes/<name>.toml. Edit colors live in the prefs GUI.
+theme = "default"
 
 [bar]
 edge = "right"      # left | right | top | bottom  (left/right = vertical bar)
