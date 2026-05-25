@@ -24,7 +24,7 @@ pub struct Panel {
 
 const GRAPH_H: i32 = 24;
 const MINI_H: i32 = 14;
-const BAR_H: i32 = 10;
+const BAR_H: i32 = 7;
 
 /// Graph drawing palette — a named set of colors reused across panels. Comes
 /// from the active theme; the defaults reproduce the original look.

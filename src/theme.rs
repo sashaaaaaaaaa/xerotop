@@ -117,7 +117,7 @@ window {{ background-color: transparent; }}
 .value {{ color: {value}; }}
 .meter-icon {{ color: {icon}; font-size: 20px; }}
 .graph {{ background-color: rgba(0,0,0,0.25); }}
-.bar-meter {{ background-color: rgba(0,0,0,0.25); }}
+.bar-meter {{ background-color: transparent; }}
 .sub {{ font-size: 9px; color: {muted}; }}
 .task {{ background: transparent; border: none; box-shadow: none; outline: none; min-height: 0; padding: 1px 3px; font-size: 11px; color: {label}; }}
 .task:hover {{ color: {value}; }}

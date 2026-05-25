@@ -15,6 +15,18 @@ use std::time::Instant;
 
 pub type Rgba = (f64, f64, f64, f64);
 
+/// Trace a rounded-rectangle path (radius clamped so it can't exceed a pill).
+fn rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+    cr.new_sub_path();
+    cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
+    cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
+    cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
+    cr.arc(x + r, y + r, r, PI, PI + FRAC_PI_2);
+    cr.close_path();
+}
+
 const WINDOW_SECS: f64 = 60.0; // graph spans ~60s regardless of sample interval
 
 struct Series {
@@ -157,13 +169,17 @@ impl Bar {
         let (r, g, b, a) = rgba;
         area.set_draw_func(move |_, cr, w, h| {
             let (w, h) = (w as f64, h as f64);
+            // Rounded "thermometer" track + fill (pill-capped ends, ewwii style).
+            rounded_rect(cr, 0.0, 0.0, w, h, h / 2.0);
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.10);
-            cr.rectangle(0.0, 0.0, w, h);
             let _ = cr.fill();
             let frac = (v.get() / max).clamp(0.0, 1.0);
-            cr.set_source_rgba(r, g, b, a);
-            cr.rectangle(0.0, 0.0, w * frac, h);
-            let _ = cr.fill();
+            let fw = w * frac;
+            if fw > 0.5 {
+                rounded_rect(cr, 0.0, 0.0, fw, h, h / 2.0);
+                cr.set_source_rgba(r, g, b, a);
+                let _ = cr.fill();
+            }
         });
 
         Bar { area, value }
