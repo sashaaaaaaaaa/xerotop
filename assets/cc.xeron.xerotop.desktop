@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=xerotop
+GenericName=System Monitor
+Comment=Battery-conscious gkrellm-style system monitor bar
+Exec=xerotop
+Icon=cc.xeron.xerotop
+Terminal=false
+Categories=System;Monitor;Utility;
+StartupWMClass=cc.xeron.xerotop
