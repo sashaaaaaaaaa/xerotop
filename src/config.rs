@@ -100,6 +100,8 @@ pub struct BarConfig {
     /// graphs have no per-frame wakeups. The bar rebuilds on AC<->battery
     /// transitions to switch between this and `smooth`.
     pub smooth_battery: bool,
+    /// Thickness (px) of the level meter bars (bat/vol/bri/disk/sensor fans).
+    pub meter_thickness: i32,
     /// Spikiness of autoscaled graphs: 1.0 matches ewwii, >1 sharpens peaks
     /// and deepens valleys.
     pub graph_gamma: f64,
@@ -118,6 +120,7 @@ impl Default for BarConfig {
             monitor: 0,
             smooth: true,
             smooth_battery: false,
+            meter_thickness: 7,
             graph_gamma: 1.0,
             opacity: 0.88,
         }
@@ -276,6 +279,12 @@ pub struct PanelConfig {
     /// default (tall for cpu/mem/…; short for cores/sensors trends).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph_height: Option<i32>,
+    /// top panel only: how many processes to list. None = default (5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+    /// uptime panel only: also show the 1/5/15-min load averages.
+    #[serde(default)]
+    pub show_load: bool,
     /// clock only: strftime time/date formats (defaults give 12-hour AM/PM).
     #[serde(default)]
     pub time_format: Option<String>,
@@ -355,6 +364,8 @@ fn default_panels() -> Vec<PanelConfig> {
         graph: true,
         show_label: true,
         graph_height: None,
+        count: None,
+        show_load: false,
         time_format: None,
         date_format: None,
     })

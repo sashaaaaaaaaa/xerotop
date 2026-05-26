@@ -7,12 +7,11 @@ what's *not* built yet.
 
 Hardcoded constants that should become config/theme knobs:
 
-- **Graph height** (`GRAPH_H` = 24, `MINI_H` = 14) — per-panel or global.
 - **Graph time window** — currently a fixed ~60s in `widgets.rs`.
-- **Bar-meter thickness** (`BAR_H` = 7).
-- **Top-list count** (`top` shows a fixed N processes).
 - **EMA smoothing alpha** for the top process list.
 - **Scroll step sizes** for volume / brightness (currently 5%).
+
+(Done: per-panel graph height, global meter-bar thickness, top-list count.)
 
 ## Panels / widgets to add
 
@@ -20,8 +19,6 @@ Hardcoded constants that should become config/theme knobs:
   `sensors` because it already does temps + fans; extend `metrics::SensorKind`
   and the hwmon scan to also expose `inN_input` (voltage) rails as selectable
   rows.
-
-- **Load average** — `/proc/loadavg` (1/5/15 min). Trivial native panel.
 - **Now playing (MPRIS)** — current track/artist + play-pause over D-Bus (we
   already talk D-Bus for the tray).
 - **Network info** — IP address / wifi SSID alongside the net throughput graph.

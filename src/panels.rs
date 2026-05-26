@@ -5,7 +5,7 @@
 use crate::config::{Actions, HeaderButton, HeaderSlot, PanelConfig};
 use crate::metrics::{
     Cpu, CpuCores, Disk, Net, Top, add_brightness, add_volume, battery, brightness, disk_usage,
-    gpu, keyboard_leds, mem_detail, toggle_mute, uptime, volume,
+    gpu, keyboard_leds, loadavg, mem_detail, toggle_mute, uptime, volume,
 };
 use crate::widgets::{Bar, Cores, Graph, GraphScale, Rgba};
 use gtk::prelude::*;
@@ -24,7 +24,6 @@ pub struct Panel {
 
 const GRAPH_H: i32 = 24;
 const MINI_H: i32 = 14;
-const BAR_H: i32 = 7;
 /// Fixed width (px) of the leading icon column shared by the meter rows
 /// (bat/vol/bri), the keyboard LEDs row, and weather — so every glyph lines up
 /// in one column and the bars get the rest of the width. Narrower than the old
@@ -166,6 +165,9 @@ thread_local! {
     /// `graph_height`; `None` = use the panel-type default passed to the graph.
     static GRAPH_H_OVERRIDE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
 
+    /// Level-meter bar thickness (px), a global config knob. Set per-apply.
+    static METER_H: std::cell::Cell<i32> = const { std::cell::Cell::new(7) };
+
     /// Every graph currently on the bar, so smooth scrolling can be toggled in
     /// place on AC<->battery transitions instead of rebuilding (which would
     /// wipe the graph history). Reset + repopulated on each `apply()` rebuild.
@@ -175,6 +177,14 @@ thread_local! {
 /// Clear the smooth-graph registry; call at the start of a panel rebuild.
 pub fn reset_smooth_registry() {
     SMOOTH_GRAPHS.with(|v| v.borrow_mut().clear());
+}
+
+/// Set the level-meter bar thickness (px). Call before (re)building panels.
+pub fn set_meter_thickness(px: i32) {
+    METER_H.with(|c| c.set(px.max(2)));
+}
+fn bar_h() -> i32 {
+    METER_H.with(|c| c.get())
 }
 
 /// Toggle per-frame scroll animation on every live graph (no rebuild).
@@ -224,11 +234,11 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
         "mem" => Some(mem_panel(iv, cfg.graph, smooth)),
         "sensors" | "temp" => Some(temp_panel(iv, cfg.graph, smooth)),
         "cores" => Some(cores_panel(iv)),
-        "uptime" => Some(uptime_panel(iv)),
+        "uptime" => Some(uptime_panel(iv, cfg.show_load)),
         "kbd" | "leds" => Some(kbd_panel(iv)),
         "weather" | "wx" => Some(weather_panel()),
         "mail" => Some(mail_panel()),
-        "top" => Some(top_panel(iv)),
+        "top" => Some(top_panel(iv, cfg.count.unwrap_or(5).clamp(1, 20))),
         "gpu" => Some(gpu_panel(iv, cfg.graph, smooth)),
         "disk" => Some(disk_panel(iv, cfg.graph, smooth)),
         "net" => Some(net_panel(iv, cfg.graph, smooth)),
@@ -460,7 +470,7 @@ where
     icon.add_css_class("meter-icon");
     icon.set_size_request(ICON_W, -1);
     icon.set_xalign(0.5);
-    let bar = Bar::new(0, BAR_H, 100.0, rgba);
+    let bar = Bar::new(0, bar_h(), 100.0, rgba);
     bar.area.set_hexpand(true);
     bar.area.set_valign(gtk::Align::Center);
     let val = Label::new(Some("--"));
@@ -547,24 +557,39 @@ fn cores_panel(interval: f64) -> Panel {
 }
 
 /// Uptime as "Xd Yh Zm".
-fn uptime_panel(interval: f64) -> Panel {
+fn uptime_panel(interval: f64, show_load: bool) -> Panel {
     let root = panel_box();
     let (row, val) = header("UP");
     root.append(&row);
-    let update = Box::new(move || match uptime() {
-        Some(secs) => {
-            let s = secs as u64;
-            let (d, h, m) = (s / 86400, (s % 86400) / 3600, (s % 3600) / 60);
-            let text = if d > 0 {
-                format!("{d}d {h}h")
-            } else if h > 0 {
-                format!("{h}h {m}m")
-            } else {
-                format!("{m}m")
-            };
-            val.set_text(&text);
+    // Optional second line: the 1/5/15-min load averages (like `uptime`).
+    let load = show_load.then(|| {
+        let l = sub();
+        l.set_xalign(1.0);
+        root.append(&l);
+        l
+    });
+    let update = Box::new(move || {
+        match uptime() {
+            Some(secs) => {
+                let s = secs as u64;
+                let (d, h, m) = (s / 86400, (s % 86400) / 3600, (s % 3600) / 60);
+                let text = if d > 0 {
+                    format!("{d}d {h}h")
+                } else if h > 0 {
+                    format!("{h}h {m}m")
+                } else {
+                    format!("{m}m")
+                };
+                val.set_text(&text);
+            }
+            None => val.set_text("--"),
         }
-        None => val.set_text("--"),
+        if let Some(load) = &load {
+            match loadavg() {
+                Some((a, b, c)) => load.set_text(&format!("{a:.2} {b:.2} {c:.2}")),
+                None => load.set_text(""),
+            }
+        }
     });
     Panel {
         root: root.upcast(),
@@ -957,7 +982,7 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
     // Usage level bar + the used/total text on one row, so capacity reads at a
     // glance instead of only as "38G/1023G".
     let usage_row = GtkBox::new(Orientation::Horizontal, 6);
-    let usage_bar = Bar::new(0, BAR_H, 100.0, pal().cyan);
+    let usage_bar = Bar::new(0, bar_h(), 100.0, pal().cyan);
     usage_bar.area.set_hexpand(true);
     usage_bar.area.set_valign(gtk::Align::Center);
     let usage = sub();
@@ -1886,14 +1911,14 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
             // the avg row get a 0..100 °C bar + trend graph.
             let (bar, g) = if kind == RowKind::Fan {
                 let max = if fan_max > 0.0 { fan_max } else { FAN_MAX_RPM };
-                let bar = Bar::new(0, BAR_H, max, color);
+                let bar = Bar::new(0, bar_h(), max, color);
                 bar.area.set_hexpand(true);
                 bar.area.set_valign(gtk::Align::Center);
                 row.append(&bar.area);
                 row.append(&val);
                 (Some(bar), None)
             } else {
-                let bar = Bar::new(0, BAR_H, 100.0, color);
+                let bar = Bar::new(0, bar_h(), 100.0, color);
                 bar.area.set_hexpand(true);
                 bar.area.set_valign(gtk::Align::Center);
                 row.append(&bar.area);
@@ -1993,8 +2018,7 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
 }
 
 /// TOP: the busiest processes by instantaneous CPU %.
-fn top_panel(interval: f64) -> Panel {
-    const N: usize = 5;
+fn top_panel(interval: f64, n: usize) -> Panel {
     let root = panel_box();
     let head = Label::new(Some("TOP"));
     head.add_css_class("label");
@@ -2002,7 +2026,7 @@ fn top_panel(interval: f64) -> Panel {
     root.append(&head);
 
     let mut rows: Vec<(Label, Label)> = Vec::new();
-    for _ in 0..N {
+    for _ in 0..n {
         let row = GtkBox::new(Orientation::Horizontal, 4);
         let name = Label::new(Some(""));
         name.add_css_class("sub");
@@ -2022,7 +2046,7 @@ fn top_panel(interval: f64) -> Panel {
 
     let top = Rc::new(RefCell::new(Top::new()));
     let update = Box::new(move || {
-        let list = top.borrow_mut().sample(N);
+        let list = top.borrow_mut().sample(n);
         for (i, (name, val)) in rows.iter().enumerate() {
             if let Some((c, p)) = list.get(i) {
                 name.set_text(c);

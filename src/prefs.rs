@@ -294,6 +294,16 @@ fn general_page(handle: &BarHandle) -> GtkBox {
     });
     page.append(&row("Graph spikiness (gamma)", &gamma));
 
+    // Level-meter bar thickness (bat/vol/bri/disk/sensor fans).
+    let meter_h = SpinButton::with_range(2.0, 40.0, 1.0);
+    meter_h.set_value(cfg.bar.meter_thickness as f64);
+    let h = handle.clone();
+    meter_h.connect_value_changed(move |s| {
+        h.cfg.borrow_mut().bar.meter_thickness = s.value() as i32;
+        h.apply();
+    });
+    page.append(&row("Meter bar thickness (px)", &meter_h));
+
     // Smooth scroll — separate switches for AC vs battery (battery off = no
     // per-frame wakeups). The bar rebuilds on AC<->battery to apply the change.
     // Toggle smooth in place (no rebuild, so graph history survives); only the
@@ -807,6 +817,8 @@ fn layout_page(handle: &BarHandle) -> GtkBox {
             graph: true,
             show_label: true,
             graph_height: None,
+            count: None,
+            show_load: false,
             time_format: None,
             date_format: None,
         });
@@ -1611,6 +1623,36 @@ fn panel_detail(handle: &BarHandle, i: usize) -> GtkBox {
                 df.as_deref(),
                 |p, v| p.date_format = v,
             ));
+            page
+        }
+        "top" => {
+            let page = page_box();
+            page.append(&interval_row(handle, i));
+            let n = SpinButton::with_range(1.0, 20.0, 1.0);
+            n.set_value(handle.cfg.borrow().panel[i].count.unwrap_or(5) as f64);
+            let h = handle.clone();
+            n.connect_value_changed(move |s| {
+                if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+                    p.count = Some(s.value() as usize);
+                }
+                h.apply();
+            });
+            page.append(&row("Processes shown", &n));
+            page
+        }
+        "uptime" => {
+            let page = page_box();
+            page.append(&interval_row(handle, i));
+            let c = CheckButton::with_label("Show load averages (1 / 5 / 15 min)");
+            c.set_active(handle.cfg.borrow().panel[i].show_load);
+            let h = handle.clone();
+            c.connect_toggled(move |c| {
+                if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+                    p.show_load = c.is_active();
+                }
+                h.apply();
+            });
+            page.append(&c);
             page
         }
         // Panels with nothing to configure beyond presence/order.

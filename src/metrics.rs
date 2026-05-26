@@ -129,6 +129,17 @@ pub fn uptime() -> Option<f64> {
         .ok()
 }
 
+/// Load averages (1, 5, 15 min) from /proc/loadavg.
+pub fn loadavg() -> Option<(f64, f64, f64)> {
+    let s = fs::read_to_string("/proc/loadavg").ok()?;
+    let mut it = s.split_whitespace();
+    Some((
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+    ))
+}
+
 /// Memory breakdown from /proc/meminfo: (used%, cache%). "used" follows the
 /// ewwii script: (MemTotal - MemAvailable) / MemTotal.
 pub fn mem_detail() -> (f64, f64) {
@@ -252,7 +263,11 @@ fn resolve_key(key: &TempKey) -> Resolved {
         },
         TempKey::Chip(chip, input) => {
             for dir in hwmon_dirs() {
-                if fs::read_to_string(dir.join("name")).unwrap_or_default().trim() == chip {
+                if fs::read_to_string(dir.join("name"))
+                    .unwrap_or_default()
+                    .trim()
+                    == chip
+                {
                     let p = dir.join(format!("{input}_input"));
                     return Resolved::File(p, input_kind(input));
                 }
@@ -278,7 +293,9 @@ fn read_resolved(r: &Resolved) -> Option<f64> {
 /// Spawn the hwmon sampler thread. It reads the resolved sensors on
 /// `interval_s` and streams snapshots; send a new `TempReq` to re-resolve
 /// (e.g. when the configured sensor list changes).
-pub fn spawn_temps(initial: TempReq) -> (async_channel::Receiver<TempSnapshot>, mpsc::Sender<TempReq>) {
+pub fn spawn_temps(
+    initial: TempReq,
+) -> (async_channel::Receiver<TempSnapshot>, mpsc::Sender<TempReq>) {
     let (tx, rx) = async_channel::unbounded::<TempSnapshot>();
     let (req_tx, req_rx) = mpsc::channel::<TempReq>();
     std::thread::spawn(move || {

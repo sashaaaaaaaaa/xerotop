@@ -8,7 +8,7 @@ use crate::panels::{self, Panel};
 use crate::power;
 use crate::theme::Theme;
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, Box as GtkBox, Orientation, glib};
+use gtk::{glib, Application, ApplicationWindow, Box as GtkBox, Orientation};
 use gtk4_layer_shell::{Edge as LsEdge, Layer as LsLayer, LayerShell};
 
 fn ls_layer(l: Layer) -> LsLayer {
@@ -65,8 +65,6 @@ fn target_monitor(cfg: &Config) -> Option<gtk::gdk::Monitor> {
 }
 
 impl BarHandle {
-    /// Re-render the entire bar from the current config: styling, geometry,
-    /// orientation, panels and scheduler. Safe to call any number of times.
     /// Regenerate the stylesheet from the theme + config (colors, fonts,
     /// opacity). CSS-only: does NOT rebuild panels, so graph history survives.
     /// Use this for appearance tweaks that don't change layout or structure.
@@ -115,7 +113,11 @@ impl BarHandle {
         // stretch) because the window is non-resizable — see build().
         let full_len = monitor.as_ref().map(|m| {
             let g = m.geometry();
-            if horizontal { g.width() } else { g.height() }
+            if horizontal {
+                g.width()
+            } else {
+                g.height()
+            }
         });
         let (length_px, anchor_start, anchor_end) = match cfg.bar.length {
             Length::Full => (full_len.filter(|&v| v > 0).unwrap_or(-1), true, true),
@@ -157,6 +159,7 @@ impl BarHandle {
             let cfg = self.cfg.borrow();
             let theme = self.theme.borrow();
             panels::set_gamma(cfg.bar.graph_gamma);
+            panels::set_meter_thickness(cfg.bar.meter_thickness);
             panels::set_palette(theme.palette());
             panels::set_tray(cfg.tray.columns, cfg.tray.icon_size);
             panels::set_temp_config(cfg.temp.clone());
@@ -234,8 +237,8 @@ pub fn build(app: &Application, cfg: Config) -> BarHandle {
     window.init_layer_shell();
     window.set_namespace(Some("xerotop"));
     window.add_css_class("xerotop"); // scopes the transparent-window rule to us
-    // Size to exactly our request every time. A resizable window remembers the
-    // largest size it ever had, so reducing thickness wouldn't shrink it back.
+                                     // Size to exactly our request every time. A resizable window remembers the
+                                     // largest size it ever had, so reducing thickness wouldn't shrink it back.
     window.set_resizable(false);
 
     let theme_css = gtk::CssProvider::new();
