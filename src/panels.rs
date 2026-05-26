@@ -162,6 +162,10 @@ thread_local! {
     /// header row. Set per-panel in `build()`; read by `header()`.
     static SHOW_LABEL: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 
+    /// Per-panel graph-height override (px). Set in `build()` from the panel's
+    /// `graph_height`; `None` = use the panel-type default passed to the graph.
+    static GRAPH_H_OVERRIDE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+
     /// Every graph currently on the bar, so smooth scrolling can be toggled in
     /// place on AC<->battery transitions instead of rebuilding (which would
     /// wipe the graph history). Reset + repopulated on each `apply()` rebuild.
@@ -186,6 +190,7 @@ pub fn set_all_smooth(on: bool) {
 pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel> {
     let iv = cfg.interval.max(0.1);
     SHOW_LABEL.with(|c| c.set(cfg.show_label));
+    GRAPH_H_OVERRIDE.with(|c| c.set(cfg.graph_height.filter(|&h| h > 0)));
     let clock_fmts = || {
         (
             cfg.time_format.clone().unwrap_or_else(|| "%I:%M %p".into()),
@@ -355,7 +360,9 @@ fn graph_widget(
         };
         // Width 0 + hexpand: fill the bar's width instead of imposing a fixed
         // floor, so reducing bar thickness actually shrinks the graphs. The draw
-        // func already adapts to whatever width it's allocated.
+        // func already adapts to whatever width it's allocated. Height is the
+        // panel-type default `h` unless the config overrides it.
+        let h = GRAPH_H_OVERRIDE.with(|c| c.get()).unwrap_or(h);
         let g = Graph::new(0, h, scale, gamma, specs, iv, smooth, 0.0);
         g.area.set_hexpand(true);
         root.append(&g.area);
@@ -1892,9 +1899,10 @@ fn temp_panel(interval: f64, graph: bool, smooth: bool) -> Panel {
                 row.append(&bar.area);
                 row.append(&val);
                 let g = graph.then(|| {
+                    let gh = GRAPH_H_OVERRIDE.with(|c| c.get()).unwrap_or(MINI_H);
                     let g = Graph::new(
                         30,
-                        MINI_H,
+                        gh,
                         GraphScale::DynamicRange,
                         1.0,
                         &[(color, true)],

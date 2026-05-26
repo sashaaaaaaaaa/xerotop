@@ -272,6 +272,10 @@ pub struct PanelConfig {
     /// `cores` panel under `cpu` reads as one block, no repeated "CPU" header).
     #[serde(default = "default_true")]
     pub show_label: bool,
+    /// Override the graph height (px) for this panel. None = the panel-type
+    /// default (tall for cpu/mem/…; short for cores/sensors trends).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_height: Option<i32>,
     /// clock only: strftime time/date formats (defaults give 12-hour AM/PM).
     #[serde(default)]
     pub time_format: Option<String>,
@@ -350,6 +354,7 @@ fn default_panels() -> Vec<PanelConfig> {
         },
         graph: true,
         show_label: true,
+        graph_height: None,
         time_format: None,
         date_format: None,
     })

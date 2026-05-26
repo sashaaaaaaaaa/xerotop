@@ -28,9 +28,6 @@ Hardcoded constants that should become config/theme knobs:
 
 ## Polish / architecture
 
-- **Live-drag perf split** — opacity (pure CSS) and thickness/length/monitor
-  (window geometry) shouldn't rebuild *all* panels on every slider tick; split
-  `apply()` into restyle / relayout / full-rebuild paths.
 - **Horizontal-mode polish** — top/bottom edges work but the layout (fixed graph
   widths, etc.) needs tuning for a horizontal bar.
 - **Multiple bars** — more than one bar at once.

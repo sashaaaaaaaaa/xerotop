@@ -144,6 +144,8 @@ date_format = "%a %d %b"
 type = "cpu"
 interval = 2                        # seconds; may be fractional (0.5 = 2/sec)
 graph = true
+show_label = true                   # false = drop the "CPU" header row
+# graph_height = 24                 # optional per-panel graph height (px)
 # ... cores, mem, gpu, disk, net, sensors, weather, mail, uptime, kbd, bat, vol,
 #     bri, top, win (taskbar), tray
 ```

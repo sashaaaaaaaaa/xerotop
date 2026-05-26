@@ -7,7 +7,7 @@ use crate::bar::BarHandle;
 use crate::config::{
     Align, BarLength, Edge, HeaderButton, HeaderSlot, Layer, PanelConfig, TempSensor,
 };
-use crate::theme::{Theme, themes_dir};
+use crate::theme::{themes_dir, Theme};
 use gtk::gdk::RGBA;
 use gtk::glib;
 use gtk::pango::FontDescription;
@@ -806,6 +806,7 @@ fn layout_page(handle: &BarHandle) -> GtkBox {
             interval: 1.0,
             graph: true,
             show_label: true,
+            graph_height: None,
             time_format: None,
             date_format: None,
         });
@@ -967,6 +968,7 @@ fn temp_detail(handle: &BarHandle, i: usize) -> GtkBox {
         h.apply();
     });
     page.append(&graph);
+    page.append(&graph_height_row(handle, i, 14)); // MINI_H default
     page.append(&Label::new(Some(
         "Add sensors (or an 'average' row) from the dropdown; reorder/label/color each. Empty = auto-detect.",
     )));
@@ -1086,8 +1088,8 @@ fn temp_sensor_row(handle: &BarHandle, list: &ListBox, i: usize, n: usize) -> Gt
     });
     let h = handle.clone();
     label_entry.connect_activate(move |_| h.apply()); // Enter applies
-    // Also apply on focus-out, so clicking away (not just Enter) re-renders the
-    // bar — matches the instant-apply color picker next to it.
+                                                      // Also apply on focus-out, so clicking away (not just Enter) re-renders the
+                                                      // bar — matches the instant-apply color picker next to it.
     let h = handle.clone();
     let focus = gtk::EventControllerFocus::new();
     focus.connect_leave(move |_| h.apply());
@@ -1527,8 +1529,28 @@ fn show_label_check(handle: &BarHandle, i: usize) -> CheckButton {
     c
 }
 
+/// A graph-height spinner for a panel. `default_h` is shown when unset (the
+/// panel-type default). Changing it rebuilds the panel (height is baked into
+/// the graph canvas), but that only happens on this explicit edit.
+fn graph_height_row(handle: &BarHandle, i: usize, default_h: i32) -> GtkBox {
+    let sp = SpinButton::with_range(6.0, 200.0, 1.0);
+    let init = handle.cfg.borrow().panel[i]
+        .graph_height
+        .unwrap_or(default_h);
+    sp.set_value(init as f64);
+    sp.set_tooltip_text(Some("Graph height in pixels"));
+    let h = handle.clone();
+    sp.connect_value_changed(move |s| {
+        if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+            p.graph_height = Some(s.value() as i32);
+        }
+        h.apply();
+    });
+    row("Graph height (px)", &sp)
+}
+
 /// Generic detail for the metric panels: interval, label toggle, plus a graph
-/// toggle for the types that actually draw a history graph.
+/// toggle + height for the types that actually draw a history graph.
 fn generic_detail(handle: &BarHandle, i: usize, kind: &str) -> GtkBox {
     let page = page_box();
     page.append(&interval_row(handle, i));
@@ -1546,6 +1568,7 @@ fn generic_detail(handle: &BarHandle, i: usize, kind: &str) -> GtkBox {
             h.apply();
         });
         page.append(&g);
+        page.append(&graph_height_row(handle, i, 24)); // GRAPH_H default
     }
     page
 }
