@@ -56,7 +56,15 @@
   .tagline .cur { display:inline-block; width:.6ch; background:var(--label); animation:blink 1.1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0; } }
 
-  /* the meter panel "hero" — a mock of the real bar */
+  /* real bar screenshot — floated so the intro text wraps beside it */
+  .shot {
+    float:right; width:185px; margin:.2rem 0 1rem 1.6rem;
+    border:1px solid var(--line); border-radius:10px;
+    box-shadow:0 10px 36px rgba(0,0,0,.5);
+  }
+  @media (max-width:560px) { .shot { float:none; display:block; margin:1rem auto; } }
+
+  /* the meter panel "hero" — a mock of the real bar (unused; kept for ref) */
   .bar {
     background:rgba(16,16,20,0.6); border:1px solid var(--line); border-radius:8px;
     padding:.9rem 1rem; margin:1.4rem 0; max-width:280px;
@@ -103,16 +111,9 @@
                              |_|</pre>
   <p class="tagline">a battery-conscious system monitor for wayland.<span class="cur">&nbsp;</span></p>
 
-  <div class="bar" role="img" aria-label="Example xerotop bar: clock, CPU 14%, memory 36%, GPU, network, temperature, battery">
-    <div class="clock"><span class="t">11:48</span> <span class="ap">PM</span><br>
-      <span class="d">Mon <b>25</b> May</span></div>
-    <div class="meter"><span class="lbl">CPU</span><span class="bar2 g">▁▂▃▂▅▇▅▃▂▃▂▁▂</span><span class="val">14%</span></div>
-    <div class="meter"><span class="lbl">MEM</span><span class="bar2 c">▂▂▃▃▂▂▅▃▂▂▃▂▂</span><span class="val">36%</span></div>
-    <div class="meter"><span class="lbl">GPU</span><span class="bar2 v">▁▂▄▆▇▆▄▃▂▁▂▃▂</span><span class="val">7%</span></div>
-    <div class="meter"><span class="lbl">NET</span><span class="bar2 c spark">▁▂▃▅▇▅▃▂▁▂▄▆▇</span></div>
-    <div class="meter"><span class="lbl">cpu</span><span class="bar2 r">▓▓▓▓▓<span class="e">░░░░</span></span><span class="val">56°</span></div>
-    <div class="meter"><span class="lbl">BAT</span><span class="bar2 r">▓▓▓▓▓▓▓▓<span class="e">░░</span></span><span class="val">81%</span></div>
-  </div>
+  <img class="shot" src="screenshot.png"
+       alt="A vertical xerotop bar: clock with power/lock icons, CPU/MEM/GPU/DISK/NET graphs, a sensors block (CPU/GPU/SSD temps + fan RPM), uptime with load averages, weather, keyboard LEDs, volume and brightness meters, a top-processes list, the window taskbar and the system tray.">
+
 
   <p>A <span class="bright">gkrellm-style</span> system monitor for Wayland (wlroots / layer-shell),
      in <span class="bright">Rust + GTK4</span>. A vertical (or horizontal) stack of live meters —

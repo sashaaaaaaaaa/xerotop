@@ -1,5 +1,7 @@
 # xerotop
 
+<img src="www/screenshot.png" align="right" width="190" alt="xerotop bar: clock, CPU/MEM/GPU/DISK/NET graphs, sensors, uptime + load, weather, keyboard LEDs, volume/brightness, top processes, taskbar and tray">
+
 A **gkrellm-style, battery-conscious system monitor** for Wayland (wlroots /
 layer-shell), in Rust + GTK4. A vertical (or horizontal) stack of live meters —
 CPU (overall + per-core), memory, GPU, disk, network, temps/fans, battery,
