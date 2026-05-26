@@ -84,9 +84,11 @@ cargo build --release
 ./target/release/xerotop
 ```
 
-Requires GTK4, `gtk4-layer-shell`, a wlroots compositor (labwc, sway, …), and —
-for tray/taskbar/brightness — a StatusNotifier-capable session, the
-foreign-toplevel protocol, and `brightnessctl` on `PATH`.
+Requires GTK4, `gtk4-layer-shell`, a wlroots compositor (labwc, sway, …), and a
+**Nerd Font** for the glyphs — the default theme uses *FiraCode Nerd Font Mono*
+(`ttf-firacode-nerd`); without one the clock/sensor/weather/etc. icons render as
+tofu boxes. For tray/taskbar/brightness also: a StatusNotifier-capable session,
+the foreign-toplevel protocol, and `brightnessctl` on `PATH`.
 
 ### Toolchain note
 
