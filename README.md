@@ -44,7 +44,7 @@ Working:
   per-panel "show label" toggle, so e.g. `cores` can sit under `cpu` headerless.
 - **SENSORS** (`sensors`, formerly `temp`): fully configurable — pick any hwmon temp/fan/voltage from a list,
   label/color/reorder each, plus an optional averaged row (bar + trend + value)
-- **BAT / VOL / BRI** as icon + rounded level bar + value, with **scroll/click
+- **battery / volume / brightness** as icon + rounded level bar + value, with **scroll/click
   control** (volume via ALSA, brightness via `brightnessctl`, right-click volume
   opens a configurable mixer)
 - **TOP** process list (configurable count), **UPTIME** (optional 1/5/15-min
@@ -55,7 +55,7 @@ Working:
 - **header**: a styled clock + date with **4 configurable icon slots** (left/right
   of both the time and date), each a custom glyph + command + color (`@menu`
   opens the power popover)
-- **taskbar** (`win`): open windows via wlr-foreign-toplevel — app icons, focus
+- **tasks** (`tasks`): open windows via wlr-foreign-toplevel — app icons, focus
   highlight, minimized = grayed/italic, left-click activate, right-click minimize
 - **system tray** (`tray`): StatusNotifier host — themed/pixmap icons,
   left-click activate, right-click **cascading D-Bus menu** with hover submenus
@@ -155,8 +155,8 @@ interval = 2                        # seconds; may be fractional (0.5 = 2/sec)
 graph = true
 show_label = true                   # false = drop the "CPU" header row
 # graph_height = 24                 # optional per-panel graph height (px)
-# ... cores, mem, gpu, disk, net, sensors, weather, mail, uptime, kbd, bat, vol,
-#     bri, top, win (taskbar), tray
+# ... cores, mem, gpu, disk, net, sensors, weather, mail, uptime, keyboard,
+#     battery, volume, brightness, top, tasks, tray
 ```
 
 ## Architecture

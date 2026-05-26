@@ -350,7 +350,18 @@ pub struct FontConfig {
 
 fn default_panels() -> Vec<PanelConfig> {
     [
-        "header", "cpu", "mem", "gpu", "disk", "net", "sensors", "bat", "vol", "bri", "top", "win",
+        "header",
+        "cpu",
+        "mem",
+        "gpu",
+        "disk",
+        "net",
+        "sensors",
+        "battery",
+        "volume",
+        "brightness",
+        "top",
+        "tasks",
         "tray",
     ]
     .iter()
@@ -361,7 +372,7 @@ fn default_panels() -> Vec<PanelConfig> {
         interval: match *k {
             "sensors" => 5.0,
             "cpu" | "mem" | "gpu" | "disk" | "top" => 2.0,
-            "bat" => 10.0,
+            "battery" => 10.0,
             _ => 1.0,
         },
         graph: true,
@@ -528,15 +539,15 @@ interval = 5
 graph = true
 
 [[panel]]
-type = "bat"
+type = "battery"
 interval = 10
 
 [[panel]]
-type = "vol"
+type = "volume"
 interval = 1
 
 [[panel]]
-type = "bri"
+type = "brightness"
 interval = 1
 
 [[panel]]
@@ -544,7 +555,7 @@ type = "top"
 interval = 3
 
 [[panel]]
-type = "win"        # taskbar (open windows via wlr-foreign-toplevel)
+type = "tasks"      # open windows via wlr-foreign-toplevel
 
 [[panel]]
 type = "tray"       # system tray (StatusNotifier)
@@ -571,7 +582,7 @@ mod tests {
                 .map(|p| p.interval)
         };
         assert_eq!(iv("cpu"), Some(2.0));
-        assert_eq!(iv("bat"), Some(10.0));
+        assert_eq!(iv("battery"), Some(10.0));
         assert_eq!(iv("top"), Some(3.0));
         assert_eq!(iv("mem"), Some(2.0));
         assert_eq!(iv("net"), Some(1.0));

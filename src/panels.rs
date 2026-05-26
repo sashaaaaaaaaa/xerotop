@@ -232,19 +232,19 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             },
         )),
         "mem" => Some(mem_panel(iv, cfg.graph, smooth)),
-        "sensors" | "temp" => Some(temp_panel(iv, cfg.graph, smooth)),
+        "sensors" => Some(temp_panel(iv, cfg.graph, smooth)),
         "cores" => Some(cores_panel(iv)),
         "uptime" => Some(uptime_panel(iv, cfg.show_load)),
-        "kbd" | "leds" => Some(kbd_panel(iv)),
+        "keyboard" => Some(kbd_panel(iv)),
         "weather" | "wx" => Some(weather_panel()),
         "mail" => Some(mail_panel()),
         "top" => Some(top_panel(iv, cfg.count.unwrap_or(5).clamp(1, 20))),
         "gpu" => Some(gpu_panel(iv, cfg.graph, smooth)),
         "disk" => Some(disk_panel(iv, cfg.graph, smooth)),
         "net" => Some(net_panel(iv, cfg.graph, smooth)),
-        "win" | "taskbar" => Some(taskbar_panel()),
+        "tasks" => Some(taskbar_panel()),
         "tray" => Some(tray_panel()),
-        "bat" | "battery" => Some(bar_panel(
+        "battery" => Some(bar_panel(
             iv,
             pal().red,
             || match battery() {
@@ -270,7 +270,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             None,
             None,
         )),
-        "vol" | "volume" => {
+        "volume" => {
             let step = cfg.scroll_step.unwrap_or(2.0).max(0.5);
             Some(bar_panel(
             iv,
@@ -301,7 +301,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
             },
         ))
         }
-        "bri" | "brightness" => {
+        "brightness" => {
             let step = cfg.scroll_step.unwrap_or(5.0).max(0.5);
             Some(bar_panel(
             iv,
@@ -1646,7 +1646,7 @@ fn taskbar_host() -> TaskbarHost {
 fn taskbar_panel() -> Panel {
     let root = panel_box();
     root.add_css_class("taskbar");
-    let head = Label::new(Some("WIN"));
+    let head = Label::new(Some("TASKS"));
     head.add_css_class("label");
     head.set_xalign(0.0);
     root.append(&head);

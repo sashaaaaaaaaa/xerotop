@@ -26,8 +26,25 @@ thread_local! {
 }
 
 const PANEL_TYPES: [&str; 19] = [
-    "header", "clock", "cpu", "cores", "mem", "gpu", "disk", "net", "sensors", "weather", "mail",
-    "uptime", "kbd", "bat", "vol", "bri", "top", "win", "tray",
+    "header",
+    "clock",
+    "cpu",
+    "cores",
+    "mem",
+    "gpu",
+    "disk",
+    "net",
+    "sensors",
+    "weather",
+    "mail",
+    "uptime",
+    "keyboard",
+    "battery",
+    "volume",
+    "brightness",
+    "top",
+    "tasks",
+    "tray",
 ];
 
 /// Panel types that have a history graph (so the "graph" toggle is meaningful).
@@ -1615,12 +1632,12 @@ fn panel_detail(handle: &BarHandle, i: usize) -> GtkBox {
     };
     match kind.as_str() {
         "header" => header_detail(handle, i),
-        "sensors" | "temp" => temp_detail(handle, i),
+        "sensors" => temp_detail(handle, i),
         "weather" | "wx" => weather_detail(handle),
         "mail" => mail_detail(handle),
         "tray" => tray_detail(handle),
-        "vol" => vol_detail(handle, i),
-        "bri" | "brightness" => {
+        "volume" => vol_detail(handle, i),
+        "brightness" => {
             let page = page_box();
             page.append(&interval_row(handle, i));
             page.append(&scroll_step_row(handle, i, 5.0));
@@ -1681,9 +1698,11 @@ fn panel_detail(handle: &BarHandle, i: usize) -> GtkBox {
             page
         }
         // Panels with nothing to configure beyond presence/order.
-        "win" => {
+        "tasks" => {
             let page = page_box();
-            let l = Label::new(Some("The taskbar has no options — it lists open windows."));
+            let l = Label::new(Some(
+                "The tasks panel has no options — it lists open windows.",
+            ));
             l.set_wrap(true);
             l.set_xalign(0.0);
             page.append(&l);
