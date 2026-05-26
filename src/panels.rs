@@ -565,7 +565,20 @@ fn cores_panel(interval: f64) -> Panel {
 /// Uptime as "Xd Yh Zm".
 fn uptime_panel(interval: f64, show_load: bool) -> Panel {
     let root = panel_box();
-    let (row, val) = header("UP");
+    // Clock glyph in the shared icon column (matching bat/vol/bri/kbd/weather),
+    // value right-aligned — instead of a "UP" text label.
+    let row = GtkBox::new(Orientation::Horizontal, 4);
+    let icon = Label::new(Some("\u{f252}")); //  hourglass (uptime — clock's in the header)
+    icon.add_css_class("meter-icon");
+    icon.set_size_request(ICON_W, -1);
+    icon.set_xalign(0.5);
+    icon.set_valign(gtk::Align::Center);
+    let val = Label::new(Some("--"));
+    val.add_css_class("value");
+    val.set_hexpand(true);
+    val.set_xalign(1.0);
+    row.append(&icon);
+    row.append(&val);
     root.append(&row);
     // Optional second line: the 1/5/15-min load averages (like `uptime`).
     let load = show_load.then(|| {
