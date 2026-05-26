@@ -30,4 +30,5 @@ vol/bri scroll step.)
 
 ## Docs / site
 
-- Add a real **screenshot** to `www/` and the README.
+- (Done: real screenshot at `www/screenshot.png`, in the README + site.)
+- Refresh the screenshot when the layout changes meaningfully.
