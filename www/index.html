@@ -63,6 +63,12 @@
     box-shadow:0 10px 36px rgba(0,0,0,.5);
   }
   @media (max-width:560px) { .shot { float:none; display:block; margin:1rem auto; } }
+  /* wide GUI screenshot — full content width */
+  .shot-wide {
+    display:block; width:100%; height:auto; margin:1rem 0;
+    border:1px solid var(--line); border-radius:10px;
+    box-shadow:0 10px 36px rgba(0,0,0,.5);
+  }
 
   /* the meter panel "hero" — a mock of the real bar (unused; kept for ref) */
   .bar {
@@ -161,7 +167,9 @@ cargo build --release
   <p class="dim">Pinned to gtk4-rs 0.10 so it builds on Rust 1.89.</p>
 
   <h2>configure</h2>
-  <p class="dim">first run writes <code>~/.config/xerotop/config.toml</code> — or just use the GUI:</p>
+  <p class="dim">right-click the bar (or <span class="bright">--prefs</span>) and use the live GUI — pick a panel, configure it, applies instantly:</p>
+  <img class="shot-wide" src="panelprefs.png" alt="xerotop Panels preferences: a master list of panels on the left, the selected panel's options (here the header's clock formats, icon slots and power-menu commands) on the right.">
+  <p class="dim">first run also writes <code>~/.config/xerotop/config.toml</code> — the same settings as plain TOML:</p>
   <pre class="codeblock">theme = "default"
 
 [bar]

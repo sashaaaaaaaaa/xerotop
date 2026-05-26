@@ -96,7 +96,12 @@ Rust ≥ 1.92). If you install a newer toolchain, bumping `Cargo.toml` to gtk4
 ## Configuration
 
 Most people won't touch the file — right-click the bar (or `xerotop --prefs`)
-and use the GUI. First run writes `~/.config/xerotop/config.toml`. Highlights:
+and use the GUI: pick a panel on the left, configure it on the right, everything
+applies live.
+
+![Panels preferences — master-detail per-panel config](www/panelprefs.png)
+
+First run writes `~/.config/xerotop/config.toml`; the equivalent under the hood:
 
 ```toml
 theme = "default"   # built-in, or a name under ~/.config/xerotop/themes/<name>.toml
