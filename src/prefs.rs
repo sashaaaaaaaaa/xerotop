@@ -121,7 +121,16 @@ fn command_row(
     entry.connect_changed(move |e| set(&mut h.cfg.borrow_mut().actions, e.text().to_string()));
     let h = handle.clone();
     entry.connect_activate(move |_| h.apply());
-    row(label, &entry)
+    // Fixed-width label column so stacked command rows (Lock/Logout/Reboot/
+    // Shutdown) line their entries up, instead of each starting after its own
+    // label's width.
+    let r = GtkBox::new(Orientation::Horizontal, 10);
+    let l = Label::new(Some(label));
+    l.set_xalign(0.0);
+    l.set_width_chars(9);
+    r.append(&l);
+    r.append(&entry);
+    r
 }
 
 // ---- color conversion ------------------------------------------------------
