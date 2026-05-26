@@ -47,7 +47,7 @@ impl State {
         }
         self.dirty = false;
         let mut list: Vec<Toplevel> = self.toplevels.values().cloned().collect();
-        list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        list.sort_by_key(|t| t.title.to_lowercase());
         let _ = self.tx.send_blocking(list);
     }
 
