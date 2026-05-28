@@ -1184,7 +1184,23 @@ fn compute_icon_name(app_id: &str) -> Option<String> {
             }
         }
     }
-    desktop_icon(&lower, &tail, &short)
+    if let Some(icon) = desktop_icon(&lower, &tail, &short) {
+        return Some(icon);
+    }
+    // XWayland fallback: labwc passes WM_CLASS *instance* (e.g. "Navigator")
+    // as app_id, but icons + StartupWMClass live under the *class* portion.
+    // Ask X11 for the matching window's class and retry the lookup.
+    let class = crate::x11_lookup::class_for_instance(app_id)?;
+    let class_lower = class.to_lowercase();
+    if let Some(display) = gtk::gdk::Display::default() {
+        let theme = gtk::IconTheme::for_display(&display);
+        for cand in [class.as_str(), class_lower.as_str()] {
+            if theme.has_icon(cand) {
+                return Some(cand.to_string());
+            }
+        }
+    }
+    desktop_icon(&class_lower, &class_lower, &class_lower)
 }
 
 fn desktop_dirs() -> Vec<PathBuf> {

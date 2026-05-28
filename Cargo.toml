@@ -21,3 +21,4 @@ toml = "1.1.2"
 ureq = "3.3.0"
 wayland-client = "0.31.14"
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+x11rb = { version = "0.13", default-features = false }

@@ -14,6 +14,7 @@ mod theme;
 mod tray;
 mod weather;
 mod widgets;
+mod x11_lookup;
 
 use gtk::Application;
 use gtk::glib;
