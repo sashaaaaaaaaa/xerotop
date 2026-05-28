@@ -1171,15 +1171,20 @@ fn resolve_icon(app_id: &str) -> Option<gtk::Image> {
 fn compute_icon_name(app_id: &str) -> Option<String> {
     let lower = app_id.to_lowercase();
     let tail = app_id.rsplit('.').next().unwrap_or(app_id).to_lowercase();
+    // Some apps suffix their app_id with a per-instance id (e.g. transmission
+    // uses "com.transmissionbt.transmission_<session>_<pid>"), which keeps the
+    // tail from ever matching a static icon name or .desktop stem. Strip the
+    // trailing `_<suffix>` so lookups get a usable handle.
+    let short = tail.split('_').next().unwrap_or(&tail).to_string();
     if let Some(display) = gtk::gdk::Display::default() {
         let theme = gtk::IconTheme::for_display(&display);
-        for cand in [app_id, &lower, &tail] {
-            if theme.has_icon(cand) {
+        for cand in [app_id, &lower, &tail, short.as_str()] {
+            if !cand.is_empty() && theme.has_icon(cand) {
                 return Some(cand.to_string());
             }
         }
     }
-    desktop_icon(&lower, &tail)
+    desktop_icon(&lower, &tail, &short)
 }
 
 fn desktop_dirs() -> Vec<PathBuf> {
@@ -1195,10 +1200,11 @@ fn desktop_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Find a .desktop file matching `want`/`tail` and return its Icon=. Exact
-/// matches (filename stem / StartupWMClass) first, then fuzzy, to avoid
-/// grabbing the wrong handler (see ewwii ONBOARDING gotcha #15).
-fn desktop_icon(want: &str, tail: &str) -> Option<String> {
+/// Find a .desktop file matching `want`/`tail`/`short` and return its Icon=.
+/// Exact matches (filename stem / StartupWMClass) first, then fuzzy, to avoid
+/// grabbing the wrong handler (see ewwii ONBOARDING gotcha #15). `short` is
+/// the tail with any trailing `_<suffix>` stripped (see compute_icon_name).
+fn desktop_icon(want: &str, tail: &str, short: &str) -> Option<String> {
     let dirs = desktop_dirs();
     for fuzzy in [false, true] {
         for dir in &dirs {
@@ -1230,12 +1236,16 @@ fn desktop_icon(want: &str, tail: &str) -> Option<String> {
                     }
                 }
                 let hit = if fuzzy {
-                    stem.contains(want) || stem.contains(tail)
+                    stem.contains(want)
+                        || stem.contains(tail)
+                        || (!short.is_empty() && stem.contains(short))
                 } else {
                     stem == want
                         || stem == tail
+                        || stem == short
                         || wmclass.as_deref() == Some(want)
                         || wmclass.as_deref() == Some(tail)
+                        || wmclass.as_deref() == Some(short)
                 };
                 if hit && let Some(i) = icon {
                     return Some(i);
