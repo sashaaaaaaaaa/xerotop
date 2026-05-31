@@ -489,16 +489,70 @@ pub fn backup_path() -> PathBuf {
     PathBuf::from(p)
 }
 
+/// Recover as much as possible from a config that failed a strict parse.
+///
+/// serde parsing is all-or-nothing: one value whose *type* a code change made
+/// incompatible (an old saved value vs a new field type) fails the whole
+/// `Config`, which would otherwise reset the bar to the reduced default panel
+/// set — silently dropping user-added panels (cores/uptime/…). Instead, parse
+/// section-by-section and panel-by-panel, keeping everything still valid; only
+/// the genuinely-incompatible section/panel falls back to its default.
+fn salvage(s: &str) -> Config {
+    let mut cfg = Config::default();
+    let Ok(t) = s.parse::<toml::Table>() else {
+        return cfg;
+    };
+    if let Some(v) = t.get("theme").and_then(|v| v.as_str()) {
+        cfg.theme = v.to_string();
+    }
+    if let Some(v) = t.get("bar").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.bar = v;
+    }
+    if let Some(v) = t.get("font").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.font = v;
+    }
+    if let Some(v) = t.get("power").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.power = v;
+    }
+    if let Some(v) = t.get("tray").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.tray = v;
+    }
+    if let Some(v) = t.get("temp").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.temp = v;
+    }
+    if let Some(v) = t.get("weather").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.weather = v;
+    }
+    if let Some(v) = t.get("mail").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.mail = v;
+    }
+    if let Some(v) = t.get("actions").cloned().and_then(|v| v.try_into().ok()) {
+        cfg.actions = v;
+    }
+    if let Some(toml::Value::Array(a)) = t.get("header_button") {
+        cfg.header = a.iter().filter_map(|h| h.clone().try_into().ok()).collect();
+    }
+    // Keep every panel that still parses; drop only the incompatible ones (the
+    // backup retains the original). Empty recovery → leave the defaults.
+    if let Some(toml::Value::Array(a)) = t.get("panel") {
+        let kept: Vec<PanelConfig> = a.iter().filter_map(|p| p.clone().try_into().ok()).collect();
+        if !kept.is_empty() {
+            cfg.panel = kept;
+        }
+    }
+    cfg
+}
+
 pub fn load() -> Config {
     let path = config_path();
     match fs::read_to_string(&path) {
         Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
-            eprintln!("xerotop: config parse error ({e}); using defaults");
-            // Preserve the unparseable file before anything (a later Save) can
-            // clobber it: the defaults have a reduced panel set, so saving over
-            // a user's config would silently drop their added panels.
+            eprintln!("xerotop: config parse error ({e}); salvaging what's valid");
+            // Preserve the original before anything (a later Save) can clobber
+            // it, then recover every still-valid section/panel rather than
+            // resetting to the reduced default set.
             let _ = fs::copy(&path, backup_path());
-            Config::default()
+            salvage(&s)
         }),
         Err(_) => {
             if let Some(dir) = path.parent() {
@@ -653,6 +707,35 @@ mod tests {
         assert_eq!(cfg.bar.thickness, 150);
         assert_eq!(cfg.actions.mixer, "pavucontrol");
         assert!(!cfg.panel.is_empty());
+    }
+
+    #[test]
+    fn salvage_keeps_valid_panels_when_one_is_incompatible() {
+        // `show_load` is a bool; a string is the kind of mismatch a code change
+        // (field retype/format change) introduces into an old saved config.
+        let toml = "\
+[[panel]]\ntype = \"cpu\"\n\
+[[panel]]\ntype = \"uptime\"\nshow_load = \"nope\"\n\
+[[panel]]\ntype = \"tasks\"\n";
+        // strict parse fails on the one bad value...
+        assert!(toml::from_str::<Config>(toml).is_err());
+        // ...but salvage keeps the other panels instead of resetting wholesale.
+        let cfg = salvage(toml);
+        let kinds: Vec<&str> = cfg.panel.iter().map(|p| p.kind.as_str()).collect();
+        assert!(kinds.contains(&"cpu") && kinds.contains(&"tasks"));
+    }
+
+    #[test]
+    fn salvage_isolates_a_bad_section_from_panels() {
+        // A bad [bar] value must not cost the user their panels.
+        let toml = "\
+[bar]\nthickness = \"huge\"\n\
+[[panel]]\ntype = \"cpu\"\n\
+[[panel]]\ntype = \"cores\"\n";
+        assert!(toml::from_str::<Config>(toml).is_err());
+        let cfg = salvage(toml);
+        assert_eq!(cfg.bar.thickness, 150); // bad section → its default
+        assert_eq!(cfg.panel.len(), 2); // panels survive
     }
 
     #[test]
