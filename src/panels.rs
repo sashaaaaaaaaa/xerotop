@@ -1163,6 +1163,9 @@ fn disk_panel(interval: f64, graph: bool, smooth: bool, show_capacity: bool) -> 
         root.append(&usage_row);
         (bar, label)
     });
+    if !show_capacity {
+        val.set_text("");
+    }
     let rd = graph_widget(
         &root,
         MINI_H,
