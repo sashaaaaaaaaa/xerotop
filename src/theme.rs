@@ -36,6 +36,8 @@ pub struct Theme {
     pub violet: String,
     /// Keyboard-LED "on"/glow color.
     pub led_on: String,
+    /// Graph background fill (hex `#rrggbb`); alpha is baked into the CSS.
+    pub graph_background: String,
     // Optional panel-color defaults the theme can carry. Written only by the
     // "Save + panel colors" button; when present, an interactive theme switch
     // applies them to the config (so a theme can capture a full look, not just
@@ -65,6 +67,7 @@ impl Default for Theme {
             red: "#ff7366".into(),
             violet: "#c78cff".into(),
             led_on: "#5fd75f".into(),
+            graph_background: "#000000".into(),
             sensors: None,
             header: None,
         }
@@ -133,6 +136,8 @@ impl Theme {
             format!("#{r:02x}{g:02x}{b:02x}")
         };
         let font = sanitize_font(&self.font_family);
+        let (gr, gg, gb) = parse_hex(&self.graph_background);
+        let graph_bg = format!("rgba({gr},{gg},{gb},0.25)");
         format!(
             r#"
 /* The bar window must be transparent, or our semi-transparent .bar fill
@@ -162,7 +167,7 @@ window.xerotop {{ background-color: transparent; }}
 .xerotop .weather-icon {{ color: {icon}; font-size: 30px; margin-top: -6px; margin-bottom: -6px; }}
 .xerotop .mail-icon {{ color: #e6f0ff; font-size: 20px; }}
 .xerotop .mail-unread {{ color: #ffbf4d; font-weight: bold; }}
-.xerotop .graph {{ background-color: rgba(0,0,0,0.25); }}
+.xerotop .graph {{ background-color: {graph_bg}; }}
 .xerotop .bar-meter {{ background-color: transparent; }}
 .xerotop .sub {{ font-size: {small}px; color: {muted}; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }}
 .xerotop .task {{ background: transparent; border: none; box-shadow: none; outline: none; min-height: 0; padding: 1px 3px; font-size: {small}px; color: {label}; }}

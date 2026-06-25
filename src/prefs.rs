@@ -596,7 +596,7 @@ type Setter = fn(&mut Theme, String);
 // one needs a full rebuild; the rest are pure CSS and only need a restyle (no
 // rebuild → graph history survives).
 #[allow(clippy::type_complexity)]
-const COLOR_FIELDS: [(&str, Getter, Setter, bool); 10] = [
+const COLOR_FIELDS: [(&str, Getter, Setter, bool); 11] = [
     (
         "Background",
         |t| t.background.clone(),
@@ -630,6 +630,12 @@ const COLOR_FIELDS: [(&str, Getter, Setter, bool); 10] = [
         "Keyboard LED",
         |t| t.led_on.clone(),
         |t, v| t.led_on = v,
+        false,
+    ),
+    (
+        "Graph background",
+        |t| t.graph_background.clone(),
+        |t, v| t.graph_background = v,
         false,
     ),
 ];
