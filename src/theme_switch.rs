@@ -7,16 +7,40 @@ use std::time::Duration;
 use crate::bar::BarHandle;
 use crate::prefs;
 
-/// Initialise colour-scheme listener based on the desktop environment.
+/// Initialise colour-scheme listener based on the desktop environment, and
+/// apply the current scheme immediately so the bar matches from startup.
 pub fn init(handle: &BarHandle) {
     let de = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     if de.to_uppercase().contains("KDE") {
         start_kde_watcher(handle);
+        sync_once_kde(handle);
     } else {
         // Fallback: GNOME, Budgie, Cinnamon, or any other DE that writes
         // org.gnome.desktop.interface color-scheme.
         start_gnome_poller(handle);
+        sync_once_gnome(handle);
     }
+}
+
+/// Apply the current desktop colour scheme immediately (no-op if auto off).
+fn sync_once_kde(handle: &BarHandle) {
+    if !handle.cfg.borrow().theme_switch.auto {
+        return;
+    }
+    if let Some(path) = kdeglobals_path() {
+        if let Some(name) = read_kde_color_scheme(&path) {
+            apply(handle, classify(&name));
+        }
+    }
+}
+
+fn sync_once_gnome(handle: &BarHandle) {
+    if !handle.cfg.borrow().theme_switch.auto {
+        return;
+    }
+    let val: String = gtk::gio::Settings::new("org.gnome.desktop.interface")
+        .property("color-scheme");
+    apply(handle, val == "prefer-dark");
 }
 
 /// Poll GSettings for the colour-scheme key every 2 seconds.
