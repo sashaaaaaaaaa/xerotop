@@ -753,6 +753,7 @@ fn theme_page(handle: &BarHandle) -> GtkBox {
         h.theme.borrow_mut().graph_background_opacity = s.value();
         h.restyle();
     });
+    let gb_opacity_c = gb_opacity.clone();
     page.append(&row("Graph bg opacity", &gb_opacity));
 
     // Loading a theme: resolve the file, swap it in, refresh every widget.
@@ -787,6 +788,7 @@ fn theme_page(handle: &BarHandle) -> GtkBox {
         fs_c.set_value(t.font_small as f64);
         fn_c.set_value(t.font_normal as f64);
         fl_c.set_value(t.font_large as f64);
+        gb_opacity_c.set_value(t.graph_background_opacity);
         for (get, btn) in buttons_c.borrow().iter() {
             btn.set_rgba(&hex_to_rgba(&get(&t)));
         }
