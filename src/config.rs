@@ -90,6 +90,31 @@ pub enum Layer {
     Overlay,
 }
 
+fn deserialize_monitor<'de, D>(d: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+    struct V;
+    impl<'de> de::Visitor<'de> for V {
+        type Value = String;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("string or integer")
+        }
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<String, E> { Ok(v.to_string()) }
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<String, E> { Ok(v.to_string()) }
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> { Ok(v.to_string()) }
+    }
+    d.deserialize_any(V)
+}
+
+fn serialize_monitor<S>(v: &str, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_str(v)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BarConfig {
@@ -102,7 +127,9 @@ pub struct BarConfig {
     pub align: Align,
     /// Stacking layer: top (above windows) / bottom / background / overlay.
     pub layer: Layer,
-    pub monitor: i32,
+    /// Monitor connector name (e.g. "DP-1", "eDP-1") or "auto" for compositor choice.
+    #[serde(deserialize_with = "deserialize_monitor", serialize_with = "serialize_monitor")]
+    pub monitor: String,
     /// Continuous graph scrolling on AC (smoother, but redraws per frame).
     /// Off = stepped.
     pub smooth: bool,
@@ -136,7 +163,7 @@ impl Default for BarConfig {
             length: BarLength::Full,
             align: Align::Center,
             layer: Layer::Top,
-            monitor: 0,
+            monitor: "auto".to_string(),
             smooth: true,
             smooth_battery: false,
             meter_thickness: 7,
@@ -683,7 +710,7 @@ thickness = 150     # px: width for vertical bars, height for horizontal
 length = "full"     # "full"/"max" to fill the edge, or a pixel count (e.g. 600)
 align = "center"    # start | center | end  (only used when length is fixed)
 layer = "top"       # top | bottom | background | overlay  (bottom = windows over bar)
-monitor = 0
+monitor = "auto"      # connector name (e.g. "DP-1", "eDP-1") or "auto"
 reverse = false     # reverse panel order (handy on horizontal bars: clock at the end)
 smooth = true       # continuous graph scrolling on AC; false = stepped (less battery)
 smooth_battery = false  # smooth scrolling while on battery (default off = no per-frame wakeups)

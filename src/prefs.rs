@@ -15,7 +15,7 @@ use gtk::prelude::*;
 use gtk::{
     Box as GtkBox, Button, CheckButton, ColorDialog, ColorDialogButton, DropDown, Entry,
     FontDialog, FontDialogButton, Label, ListBox, ListItem, Notebook, Orientation, Scale,
-    SignalListItemFactory, SpinButton, StringObject, Switch, Window,
+    SignalListItemFactory, SpinButton, StringList, StringObject, Switch, Window,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -292,14 +292,53 @@ fn general_page(handle: &BarHandle) -> GtkBox {
     page.append(&row("Align (if fixed)", &align));
 
     // Monitor
-    let mon = SpinButton::with_range(-1.0, 16.0, 1.0);
-    mon.set_value(cfg.bar.monitor as f64);
+    let mon_store = StringList::new(&[]);
+    mon_store.append("auto");
+    if let Some(display) = gtk::gdk::Display::default() {
+        let ml = display.monitors();
+        for i in 0..ml.n_items() {
+            if let Some(m) = ml.item(i).and_downcast::<gtk::gdk::Monitor>() {
+                let name = m
+                    .connector()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("Monitor {i}"));
+                mon_store.append(&name);
+            }
+        }
+    }
+    let expr = gtk::PropertyExpression::new(
+        StringObject::static_type(),
+        None::<gtk::Expression>,
+        "string",
+    );
+    let mon_dd = DropDown::new(Some(mon_store.clone()), Some(expr));
+    let pos = if cfg.bar.monitor == "auto" {
+        0
+    } else {
+        let mut found = 0;
+        for i in 1..mon_store.n_items() {
+            if mon_store.string(i).as_deref() == Some(&cfg.bar.monitor) {
+                found = i;
+                break;
+            }
+        }
+        found
+    };
+    mon_dd.set_selected(pos);
     let h = handle.clone();
-    mon.connect_value_changed(move |s| {
-        h.cfg.borrow_mut().bar.monitor = s.value() as i32;
+    mon_dd.connect_selected_notify(move |dd| {
+        let idx = dd.selected();
+        let name = if idx == 0 {
+            "auto".to_string()
+        } else if let Some(s) = mon_store.string(idx) {
+            s.to_string()
+        } else {
+            return;
+        };
+        h.cfg.borrow_mut().bar.monitor = name;
         h.relayout();
     });
-    page.append(&row("Monitor (-1 = auto)", &mon));
+    page.append(&row("Monitor", &mon_dd));
 
     // Stacking layer
     let layer = DropDown::from_strings(&["background", "bottom", "top", "overlay"]);

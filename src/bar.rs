@@ -50,18 +50,21 @@ fn edges(edge: Edge) -> (LsEdge, LsEdge, LsEdge, LsEdge) {
     }
 }
 
-/// The monitor the bar targets (configured index, else the first), for geometry.
+/// The monitor the bar targets (by connector name, else the first), for geometry.
 fn target_monitor(cfg: &Config) -> Option<gtk::gdk::Monitor> {
     let monitors = gtk::gdk::Display::default()?.monitors();
-    let idx = if cfg.bar.monitor >= 0 {
-        cfg.bar.monitor as u32
-    } else {
-        0
-    };
-    monitors
-        .item(idx)
-        .and_downcast::<gtk::gdk::Monitor>()
-        .or_else(|| monitors.item(0).and_downcast::<gtk::gdk::Monitor>())
+    let n = monitors.n_items();
+    if cfg.bar.monitor != "auto" {
+        for i in 0..n {
+            if let Some(m) = monitors.item(i).and_downcast::<gtk::gdk::Monitor>() {
+                if m.connector().as_deref() == Some(&cfg.bar.monitor) {
+                    return Some(m);
+                }
+            }
+        }
+    }
+    // Fall back to the first monitor for geometry.
+    (0..n).find_map(|i| monitors.item(i).and_downcast::<gtk::gdk::Monitor>())
 }
 
 impl BarHandle {
@@ -98,10 +101,10 @@ impl BarHandle {
     pub fn relayout(&self) {
         let cfg = self.cfg.borrow();
         let monitor = target_monitor(&cfg);
-        // Pin to the configured output if requested; monitor < 0 = compositor's
-        // choice (but we still use the first output's geometry for full length).
+        // Pin to the configured output if requested; "auto" = compositor's choice
+        // (but we still use the first output's geometry for full length).
         // Clear any previous pin on the auto path so it actually unpins live.
-        if cfg.bar.monitor >= 0
+        if cfg.bar.monitor != "auto"
             && let Some(m) = &monitor
         {
             self.window.set_monitor(Some(m));
