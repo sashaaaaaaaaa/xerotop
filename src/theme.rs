@@ -189,6 +189,10 @@ window.xerotop {{ background-color: transparent; }}
 .xerotop .fs-s {{ font-size: {small}px; }}
 .xerotop .fs-m {{ font-size: {normal}px; }}
 .xerotop .fs-l {{ font-size: {large}px; }}
+/* Text color picks (host/kernel rows) — after .sub so they win its color. */
+.xerotop .fc-muted {{ color: {muted}; }}
+.xerotop .fc-label {{ color: {label}; }}
+.xerotop .fc-value {{ color: {value}; }}
 .xerotop .task {{ background: transparent; border: none; box-shadow: none; outline: none; min-height: 0; padding: 1px 3px; font-size: {small}px; color: {label}; }}
 .xerotop .task:hover {{ color: {value}; }}
 .xerotop .task-active {{ background-color: rgba(255,255,255,0.10); color: {bright}; }}

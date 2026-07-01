@@ -23,6 +23,19 @@ impl Edge {
     }
 }
 
+/// Which of the theme's three text colors a bit of text uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TextColor {
+    /// The theme's `muted` (dim `.sub` text — the default).
+    #[default]
+    Muted,
+    /// The theme's `label` (bold header color).
+    Label,
+    /// The theme's `value` color.
+    Value,
+}
+
 /// Which of the theme's three font sizes a bit of text uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -361,6 +374,16 @@ pub struct PanelConfig {
     /// header panel only: font size for the kernel row.
     #[serde(default)]
     pub kernel_font: FontSize,
+    /// header panel only: strip the local/build suffix from the kernel release
+    /// (e.g. "7.1.1-tkg-eevdf-rt" → "7.1.1").
+    #[serde(default)]
+    pub short_kernel: bool,
+    /// header panel only: hostname text color (which theme text role to use).
+    #[serde(default)]
+    pub hostname_color: TextColor,
+    /// header panel only: kernel text color (which theme text role to use).
+    #[serde(default)]
+    pub kernel_color: TextColor,
     /// Show the panel's label/value header row. Off → just the graphic (e.g. a
     /// `cores` panel under `cpu` reads as one block, no repeated "CPU" header).
     #[serde(default = "default_true")]
@@ -516,6 +539,9 @@ fn default_panels() -> Vec<PanelConfig> {
         host_above_clock: false,
         hostname_font: FontSize::Small,
         kernel_font: FontSize::Small,
+        short_kernel: false,
+        hostname_color: TextColor::Muted,
+        kernel_color: TextColor::Muted,
     })
     .collect()
 }

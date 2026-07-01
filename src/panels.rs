@@ -328,6 +328,9 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
                 cfg.host_above_clock,
                 cfg.hostname_font,
                 cfg.kernel_font,
+                cfg.short_kernel,
+                cfg.hostname_color,
+                cfg.kernel_color,
             ))
         }
         "clock" => {
@@ -2683,6 +2686,16 @@ fn fs_class(s: crate::config::FontSize) -> &'static str {
     }
 }
 
+/// CSS class for a configured text color role (see `.fc-*` in theme.rs).
+fn fc_class(c: crate::config::TextColor) -> &'static str {
+    use crate::config::TextColor::*;
+    match c {
+        Muted => "fc-muted",
+        Label => "fc-label",
+        Value => "fc-value",
+    }
+}
+
 fn header_panel(
     interval: f64,
     time_fmt: String,
@@ -2694,6 +2707,9 @@ fn header_panel(
     host_above_clock: bool,
     hostname_font: crate::config::FontSize,
     kernel_font: crate::config::FontSize,
+    short_kernel: bool,
+    hostname_color: crate::config::TextColor,
+    kernel_color: crate::config::TextColor,
 ) -> Panel {
     let root = panel_box();
     root.add_css_class("clock");
@@ -2755,6 +2771,7 @@ fn header_panel(
         };
         let l = sub();
         l.add_css_class(fs_class(hostname_font));
+        l.add_css_class(fc_class(hostname_color));
         l.set_text(&host);
         row.set_center_widget(Some(&l));
         row
@@ -2763,9 +2780,17 @@ fn header_panel(
         let row = gtk::CenterBox::new();
         let os = std::fs::read_to_string("/proc/sys/kernel/ostype").unwrap_or_default();
         let rel = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+        let rel = rel.trim();
+        // Short kernel: drop the local/build suffix after the first '-'.
+        let rel = if short_kernel {
+            rel.split('-').next().unwrap_or(rel)
+        } else {
+            rel
+        };
         let l = sub();
         l.add_css_class(fs_class(kernel_font));
-        l.set_text(&format!("{} {}", os.trim(), rel.trim()));
+        l.add_css_class(fc_class(kernel_color));
+        l.set_text(&format!("{} {}", os.trim(), rel));
         row.set_center_widget(Some(&l));
         row
     });

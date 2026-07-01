@@ -1167,6 +1167,9 @@ fn layout_page(handle: &BarHandle) -> GtkBox {
             host_above_clock: false,
             hostname_font: crate::config::FontSize::Small,
             kernel_font: crate::config::FontSize::Small,
+            short_kernel: false,
+            hostname_color: crate::config::TextColor::Muted,
+            kernel_color: crate::config::TextColor::Muted,
         });
         h.apply();
         populate_panels(&h, &list_c);
@@ -1815,6 +1818,24 @@ fn font_from_idx(i: u32) -> crate::config::FontSize {
     }
 }
 
+/// TextColor <-> dropdown index (muted=0, label=1, value=2).
+fn color_idx(c: crate::config::TextColor) -> u32 {
+    use crate::config::TextColor::*;
+    match c {
+        Muted => 0,
+        Label => 1,
+        Value => 2,
+    }
+}
+fn color_from_idx(i: u32) -> crate::config::TextColor {
+    use crate::config::TextColor::*;
+    match i {
+        1 => Label,
+        2 => Value,
+        _ => Muted,
+    }
+}
+
 fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
     // Seed default header buttons so the slots show what's currently on the bar.
     if handle.cfg.borrow().header.is_empty() {
@@ -1858,8 +1879,8 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
         |p, v| p.date_format = v,
     ));
 
-    // Hostname row: [Show hostname] [Short name] [font S/M/L].
-    // "Short name" is hidden until hostname is enabled.
+    // Hostname row: [Show hostname] [Short name] [font S/M/L] [color].
+    // Extra controls hide until hostname is enabled.
     let host_row = GtkBox::new(Orientation::Horizontal, 8);
     let hh = CheckButton::with_label("Show hostname");
     hh.set_active(handle.cfg.borrow().panel[i].show_hostname);
@@ -1870,16 +1891,22 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
     host_font.set_tooltip_text(Some("Hostname font size (small / medium / large)"));
     host_font.set_selected(font_idx(handle.cfg.borrow().panel[i].hostname_font));
     host_font.set_visible(handle.cfg.borrow().panel[i].show_hostname);
+    let host_color = DropDown::from_strings(&["muted", "label", "value"]);
+    host_color.set_tooltip_text(Some("Hostname text color (theme role)"));
+    host_color.set_selected(color_idx(handle.cfg.borrow().panel[i].hostname_color));
+    host_color.set_visible(handle.cfg.borrow().panel[i].show_hostname);
     {
         let h = handle.clone();
         let sh_c = sh.clone();
         let hf_c = host_font.clone();
+        let hc_c = host_color.clone();
         hh.connect_toggled(move |c| {
             if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
                 p.show_hostname = c.is_active();
             }
             sh_c.set_visible(c.is_active());
             hf_c.set_visible(c.is_active());
+            hc_c.set_visible(c.is_active());
             h.apply();
         });
     }
@@ -1901,27 +1928,57 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
             h.apply();
         });
     }
+    {
+        let h = handle.clone();
+        host_color.connect_selected_notify(move |d| {
+            if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+                p.hostname_color = color_from_idx(d.selected());
+            }
+            h.apply();
+        });
+    }
     host_row.append(&hh);
     host_row.append(&sh);
     host_row.append(&host_font);
+    host_row.append(&host_color);
     page.append(&host_row);
 
-    // Kernel row: [Show kernel] [font S/M/L].
+    // Kernel row: [Show kernel] [Short] [font S/M/L] [color].
     let kern_row = GtkBox::new(Orientation::Horizontal, 8);
     let hk = CheckButton::with_label("Show kernel");
     hk.set_active(handle.cfg.borrow().panel[i].show_kernel);
+    let ksh = CheckButton::with_label("Short");
+    ksh.set_active(handle.cfg.borrow().panel[i].short_kernel);
+    ksh.set_visible(handle.cfg.borrow().panel[i].show_kernel);
     let kern_font = DropDown::from_strings(&["S", "M", "L"]);
     kern_font.set_tooltip_text(Some("Kernel font size (small / medium / large)"));
     kern_font.set_selected(font_idx(handle.cfg.borrow().panel[i].kernel_font));
     kern_font.set_visible(handle.cfg.borrow().panel[i].show_kernel);
+    let kern_color = DropDown::from_strings(&["muted", "label", "value"]);
+    kern_color.set_tooltip_text(Some("Kernel text color (theme role)"));
+    kern_color.set_selected(color_idx(handle.cfg.borrow().panel[i].kernel_color));
+    kern_color.set_visible(handle.cfg.borrow().panel[i].show_kernel);
     {
         let h = handle.clone();
+        let ksh_c = ksh.clone();
         let kf_c = kern_font.clone();
+        let kc_c = kern_color.clone();
         hk.connect_toggled(move |c| {
             if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
                 p.show_kernel = c.is_active();
             }
+            ksh_c.set_visible(c.is_active());
             kf_c.set_visible(c.is_active());
+            kc_c.set_visible(c.is_active());
+            h.apply();
+        });
+    }
+    {
+        let h = handle.clone();
+        ksh.connect_toggled(move |c| {
+            if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+                p.short_kernel = c.is_active();
+            }
             h.apply();
         });
     }
@@ -1934,8 +1991,19 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
             h.apply();
         });
     }
+    {
+        let h = handle.clone();
+        kern_color.connect_selected_notify(move |d| {
+            if let Some(p) = h.cfg.borrow_mut().panel.get_mut(i) {
+                p.kernel_color = color_from_idx(d.selected());
+            }
+            h.apply();
+        });
+    }
     kern_row.append(&hk);
+    kern_row.append(&ksh);
     kern_row.append(&kern_font);
+    kern_row.append(&kern_color);
     page.append(&kern_row);
 
     // Host/kernel position relative to the clock (gkrellm put them on top).
