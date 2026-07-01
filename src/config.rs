@@ -55,7 +55,12 @@ pub enum CornerMode {
     /// Same corner radius on all four corners.
     #[default]
     Uniform,
-    /// Only round the corners that face away from the screen edge.
+    /// Round both corners on the side opposite the docked edge (a right-docked
+    /// bar rounds its two left corners), even if they sit at a screen edge.
+    OppositeEdges,
+    /// Round only corners that touch no screen edge — accounts for the docked
+    /// edge *and* the alignment/length, so e.g. a top-aligned fixed-length
+    /// right bar rounds only its floating bottom-left corner.
     EdgeAware,
 }
 
@@ -781,7 +786,9 @@ smooth_battery = false  # smooth scrolling while on battery (default off = no pe
 graph_gamma = 1.0   # autoscaled-graph spikiness; 1.0 = ewwii, >1 sharper peaks
 opacity = 0.88      # background opacity: 0.0 transparent .. 1.0 opaque
 corner_radius = 0   # px; 0 = square corners
-corner_mode = "uniform"  # uniform | edge_aware  (edge_aware = outer corners only)
+corner_mode = "uniform"  # uniform | oppositeedges | edgeaware
+                         #   oppositeedges = both corners away from the docked edge
+                         #   edgeaware     = only corners touching no screen edge
 
 [power]
 # On battery, multiply every panel's update interval by this (saves wakeups).

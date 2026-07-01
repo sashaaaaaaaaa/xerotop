@@ -413,15 +413,21 @@ fn general_page(handle: &BarHandle) -> GtkBox {
     page.append(&row("Corner radius (px)", &corner_r));
 
     // Corner mode
-    let corner_mode = DropDown::from_strings(&["uniform", "edge aware"]);
+    let corner_mode = DropDown::from_strings(&["uniform", "opposite edges", "edge aware"]);
+    corner_mode.set_tooltip_text(Some(
+        "uniform: all corners · opposite edges: both corners away from the docked edge · \
+         edge aware: only corners touching no screen edge",
+    ));
     corner_mode.set_selected(match cfg.bar.corner_mode {
         CornerMode::Uniform => 0,
-        CornerMode::EdgeAware => 1,
+        CornerMode::OppositeEdges => 1,
+        CornerMode::EdgeAware => 2,
     });
     let h = handle.clone();
     corner_mode.connect_selected_notify(move |d| {
         h.cfg.borrow_mut().bar.corner_mode = match d.selected() {
-            1 => CornerMode::EdgeAware,
+            1 => CornerMode::OppositeEdges,
+            2 => CornerMode::EdgeAware,
             _ => CornerMode::Uniform,
         };
         h.restyle();

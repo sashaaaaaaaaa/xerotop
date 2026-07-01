@@ -4,7 +4,7 @@
 //! `~/.config/xerotop/themes/<name>.toml`; the built-in default reproduces the
 //! original dark look.
 
-use crate::config::{CornerMode, Edge, HeaderButton, TempSensor};
+use crate::config::{Align, CornerMode, Edge, HeaderButton, TempSensor};
 use crate::widgets::Rgba;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -126,7 +126,15 @@ impl Theme {
     /// Generate the full stylesheet. `opacity` (from config) sets the bar's
     /// background alpha. Structural rules (padding, sizes) are constant; colors
     /// and the font come from the theme.
-    pub fn css(&self, opacity: f64, corner_radius: i32, corner_mode: CornerMode, edge: Edge) -> String {
+    pub fn css(
+        &self,
+        opacity: f64,
+        corner_radius: i32,
+        corner_mode: CornerMode,
+        edge: Edge,
+        align: Align,
+        length_full: bool,
+    ) -> String {
         let (br, bg_, bb) = parse_hex(&self.background);
         let bar_bg = format!("rgba({br},{bg_},{bb},{:.3})", opacity.clamp(0.0, 1.0));
         let icon = lighten(&self.label, 0.12);
@@ -142,14 +150,53 @@ impl Theme {
         let (gr, gg, gb) = parse_hex(&self.graph_background);
         let graph_bg = format!("rgba({gr},{gg},{gb},{:.3})", self.graph_background_opacity.clamp(0.0, 1.0));
         let cr = corner_radius.max(0);
-        let (tl, tr, bl, br) = if cr == 0 || corner_mode == CornerMode::Uniform {
-            (cr, cr, cr, cr)
+        let r = |round: bool| if round { cr } else { 0 };
+        // Corner order everywhere below: (top-left, top-right, bottom-left, bottom-right).
+        let (tl, tr, bl, br) = if cr == 0 {
+            (0, 0, 0, 0)
         } else {
-            match edge {
-                Edge::Left => (0, cr, 0, cr),
-                Edge::Right => (cr, 0, cr, 0),
-                Edge::Top => (0, 0, cr, cr),
-                Edge::Bottom => (cr, cr, 0, 0),
+            match corner_mode {
+                CornerMode::Uniform => (cr, cr, cr, cr),
+                CornerMode::OppositeEdges => match edge {
+                    Edge::Left => (0, cr, 0, cr),
+                    Edge::Right => (cr, 0, cr, 0),
+                    Edge::Top => (0, 0, cr, cr),
+                    Edge::Bottom => (cr, cr, 0, 0),
+                },
+                CornerMode::EdgeAware => {
+                    // A corner rounds only if it touches no screen edge — neither
+                    // the docked edge nor a perpendicular end that reaches a screen
+                    // edge (full length, or the aligned end of a fixed-length bar).
+                    let (d_tl, d_tr, d_bl, d_br) = match edge {
+                        Edge::Right => (false, true, false, true),
+                        Edge::Left => (true, false, true, false),
+                        Edge::Top => (true, true, false, false),
+                        Edge::Bottom => (false, false, true, true),
+                    };
+                    let (start_touch, end_touch) = if length_full {
+                        (true, true)
+                    } else {
+                        match align {
+                            Align::Start => (true, false),
+                            Align::End => (false, true),
+                            Align::Center => (false, false),
+                        }
+                    };
+                    // Perpendicular ends: vertical bar → start=top, end=bottom;
+                    // horizontal bar → start=left, end=right.
+                    let vertical = matches!(edge, Edge::Left | Edge::Right);
+                    let (p_tl, p_tr, p_bl, p_br) = if vertical {
+                        (start_touch, start_touch, end_touch, end_touch)
+                    } else {
+                        (start_touch, end_touch, start_touch, end_touch)
+                    };
+                    (
+                        r(!d_tl && !p_tl),
+                        r(!d_tr && !p_tr),
+                        r(!d_bl && !p_bl),
+                        r(!d_br && !p_br),
+                    )
+                }
             }
         };
         format!(
