@@ -953,6 +953,8 @@ fn mail_panel() -> Panel {
     let row = GtkBox::new(Orientation::Horizontal, 6);
     let icon = Label::new(Some("\u{f0e0}")); // envelope
     icon.add_css_class("mail-icon");
+    icon.set_size_request(ICON_W, -1); // same fixed column as the other icon rows
+    icon.set_xalign(0.5);
     let count = Label::new(Some("--"));
     count.add_css_class("value");
     count.set_hexpand(true);
