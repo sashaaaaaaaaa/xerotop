@@ -2591,7 +2591,7 @@ fn default_header_buttons(actions: &Actions) -> Vec<HeaderButton> {
 /// Build one header icon button. `command` "@menu" opens the power popover
 /// (logout/reboot/shutdown); otherwise it runs as a shell command on click.
 /// `color` (hex) tints the glyph; empty = default header/accent color.
-fn header_button(icon: &str, command: &str, color: &str, actions: &Actions) -> gtk::Button {
+fn header_button(slot: HeaderSlot, icon: &str, command: &str, color: &str, actions: &Actions) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.add_css_class("hbtn");
     // Blank icon → fall back to a command-appropriate glyph so it's never empty.
@@ -2638,8 +2638,26 @@ fn header_button(icon: &str, command: &str, color: &str, actions: &Actions) -> g
         // Unparent on destroy or GTK warns when the panel rebuilds.
         btn.connect_destroy(move |_| pop.unparent());
     } else {
-        let cmd = command.to_string();
-        btn.connect_clicked(move |_| spawn(&cmd));
+        // Read the command live from HEADER_CFG at click time so a command edit
+        // takes effect without a full panel rebuild (which would reset graph
+        // history). Falls back to the command baked at build for the built-in
+        // default buttons (HEADER_CFG stays empty until the header is configured).
+        let baked = command.to_string();
+        btn.connect_clicked(move |_| {
+            let cmd = HEADER_CFG
+                .with(|c| {
+                    c.borrow()
+                        .iter()
+                        .find(|b| b.slot == slot)
+                        .map(|b| b.command.clone())
+                })
+                .unwrap_or_else(|| baked.clone());
+            // A slot switched to @menu can't become a popover without a rebuild;
+            // don't spawn the literal sentinel in the meantime.
+            if cmd != HEADER_MENU {
+                spawn(&cmd);
+            }
+        });
     }
     btn
 }
@@ -2661,7 +2679,7 @@ fn header_panel(interval: f64, time_fmt: String, date_fmt: String, actions: &Act
         buttons
             .iter()
             .find(|b| b.slot == slot && (!b.icon.is_empty() || !b.command.is_empty()))
-            .map(|b| header_button(&b.icon, &b.command, &b.color, actions))
+            .map(|b| header_button(b.slot, &b.icon, &b.command, &b.color, actions))
     };
 
     // Time row: [time-left] HH:MM·ampm [time-right]

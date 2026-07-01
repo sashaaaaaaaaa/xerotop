@@ -169,6 +169,14 @@ impl BarHandle {
         panels::refresh_mail_config(self.cfg.borrow().mail.clone());
     }
 
+    /// Live-apply only the header button commands. The buttons look their command
+    /// up live at click time, so a command edit takes effect with no panel
+    /// rebuild — graph history survives. Glyph/color/@menu changes still need a
+    /// full apply() to re-render the button.
+    pub fn apply_header(&self) {
+        panels::set_header_buttons(self.cfg.borrow().header.clone());
+    }
+
     /// Full re-render from the current config: styling, geometry, panels and
     /// scheduler. Safe to call any number of times.
     pub fn apply(&self) {

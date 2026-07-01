@@ -1737,13 +1737,14 @@ fn header_slot_row(handle: &BarHandle, slot: HeaderSlot, name: &str) -> GtkBox {
         store();
         h.apply();
     });
+    // Header command is looked up live by the button, so a command edit applies
+    // without a full panel rebuild (no graph reset). Glyph/color/@menu changes
+    // still go through the full apply() wired above.
     let h = handle.clone();
-    cmd.connect_activate(move |_| h.apply());
-    // Also apply on focus-out so clicking away (e.g. straight to "Save") rebinds
-    // the header command in the running bar, matching the glyph field above.
+    cmd.connect_activate(move |_| h.apply_header());
     let h = handle.clone();
     let focus = gtk::EventControllerFocus::new();
-    focus.connect_leave(move |_| h.apply());
+    focus.connect_leave(move |_| h.apply_header());
     cmd.add_controller(focus);
     r
 }
