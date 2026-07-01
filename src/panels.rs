@@ -951,7 +951,7 @@ fn mail_host() -> MailHost {
 fn mail_panel() -> Panel {
     let root = panel_box();
     let row = GtkBox::new(Orientation::Horizontal, 6);
-    let icon = Label::new(Some("\u{f0e0}")); // envelope
+    let icon = Label::new(Some("\u{f003}")); // envelope outline (filled when unread)
     icon.add_css_class("mail-icon");
     icon.set_size_request(ICON_W, -1); // same fixed column as the other icon rows
     icon.set_xalign(0.5);
@@ -976,16 +976,21 @@ fn mail_panel() -> Panel {
     let host = mail_host();
     let _ = host.req_tx.send(mail_req()); // push current config
 
-    let (count_c, root_c) = (count.clone(), root.clone());
+    let (count_c, root_c, icon_c) = (count.clone(), root.clone(), icon.clone());
     let render: MailRenderFn = Rc::new(move |m: &crate::mail::MailCount| {
         root_c.set_visible(m.present); // no maildir → hide the panel entirely
         if m.present {
             count_c.set_text(&format!("{}/{}", m.new, m.total));
-            // light the count yellow when there are unread messages
+            // Unread: light the count yellow and fill in the envelope; empty
+            // inbox → dim count + outline envelope.
             if m.new > 0 {
                 count_c.add_css_class("mail-unread");
+                icon_c.add_css_class("mail-unread");
+                icon_c.set_text("\u{f0e0}"); // filled envelope
             } else {
                 count_c.remove_css_class("mail-unread");
+                icon_c.remove_css_class("mail-unread");
+                icon_c.set_text("\u{f003}"); // outline envelope
             }
         }
     });
