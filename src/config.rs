@@ -23,6 +23,21 @@ impl Edge {
     }
 }
 
+/// How the kernel row renders the OS name + release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum KernelFormat {
+    /// OS + full release, e.g. "Linux 7.1.1-tkg-eevdf-rt" (the default).
+    #[default]
+    OsFull,
+    /// OS + release with the build suffix stripped, e.g. "Linux 7.1.1".
+    OsShort,
+    /// Full release only, e.g. "7.1.1-tkg-eevdf-rt".
+    Full,
+    /// Release only, suffix stripped, e.g. "7.1.1".
+    Short,
+}
+
 /// Which of the theme's three text colors a bit of text uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -379,10 +394,9 @@ pub struct PanelConfig {
     /// header panel only: font size for the kernel row.
     #[serde(default)]
     pub kernel_font: FontSize,
-    /// header panel only: strip the local/build suffix from the kernel release
-    /// (e.g. "7.1.1-tkg-eevdf-rt" → "7.1.1").
+    /// header panel only: how the kernel row renders (OS/version, full/short).
     #[serde(default)]
-    pub short_kernel: bool,
+    pub kernel_format: KernelFormat,
     /// header panel only: hostname text color (which theme text role to use).
     #[serde(default)]
     pub hostname_color: TextColor,
@@ -544,7 +558,7 @@ fn default_panels() -> Vec<PanelConfig> {
         host_above_clock: false,
         hostname_font: FontSize::Small,
         kernel_font: FontSize::Small,
-        short_kernel: false,
+        kernel_format: KernelFormat::OsFull,
         hostname_color: TextColor::Muted,
         kernel_color: TextColor::Muted,
     })

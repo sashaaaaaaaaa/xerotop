@@ -328,7 +328,7 @@ pub fn build(cfg: &PanelConfig, smooth: bool, actions: &Actions) -> Option<Panel
                 cfg.host_above_clock,
                 cfg.hostname_font,
                 cfg.kernel_font,
-                cfg.short_kernel,
+                cfg.kernel_format,
                 cfg.hostname_color,
                 cfg.kernel_color,
             ))
@@ -2707,7 +2707,7 @@ fn header_panel(
     host_above_clock: bool,
     hostname_font: crate::config::FontSize,
     kernel_font: crate::config::FontSize,
-    short_kernel: bool,
+    kernel_format: crate::config::KernelFormat,
     hostname_color: crate::config::TextColor,
     kernel_color: crate::config::TextColor,
 ) -> Panel {
@@ -2779,18 +2779,22 @@ fn header_panel(
     let kernel_row = show_kernel.then(|| {
         let row = gtk::CenterBox::new();
         let os = std::fs::read_to_string("/proc/sys/kernel/ostype").unwrap_or_default();
+        let os = os.trim();
         let rel = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
         let rel = rel.trim();
-        // Short kernel: drop the local/build suffix after the first '-'.
-        let rel = if short_kernel {
-            rel.split('-').next().unwrap_or(rel)
-        } else {
-            rel
+        // Short = release up to the first '-' (drops the local/build suffix).
+        let short = rel.split('-').next().unwrap_or(rel);
+        use crate::config::KernelFormat::*;
+        let text = match kernel_format {
+            OsFull => format!("{os} {rel}"),
+            OsShort => format!("{os} {short}"),
+            Full => rel.to_string(),
+            Short => short.to_string(),
         };
         let l = sub();
         l.add_css_class(fs_class(kernel_font));
         l.add_css_class(fc_class(kernel_color));
-        l.set_text(&format!("{} {}", os.trim(), rel));
+        l.set_text(&text);
         row.set_center_widget(Some(&l));
         row
     });
