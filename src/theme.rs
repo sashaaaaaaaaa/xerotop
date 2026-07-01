@@ -226,7 +226,7 @@ window.xerotop {{ background-color: transparent; }}
    the line-box padding the bigger font adds, so the weather row stays the same
    height as the meter rows instead of growing. */
 .xerotop .weather-icon {{ color: {icon}; font-size: 30px; margin-top: -6px; margin-bottom: -6px; }}
-.xerotop .mail-icon {{ color: #e6f0ff; font-size: 20px; }}
+.xerotop .mail-icon {{ color: {icon}; font-size: 20px; }}
 .xerotop .mail-unread {{ color: #ffbf4d; font-weight: bold; }}
 .xerotop .graph {{ background-color: {graph_bg}; }}
 .xerotop .bar-meter {{ background-color: transparent; }}
