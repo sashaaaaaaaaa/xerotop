@@ -148,6 +148,13 @@ impl BarHandle {
         self.window.auto_exclusive_zone_enable();
     }
 
+    /// Live-apply only the mail config (command / dir / interval). No panel
+    /// rebuild — the click handler reads the command live and the counter thread
+    /// is re-pointed at the new dir/interval, so graph history survives.
+    pub fn apply_mail(&self) {
+        panels::refresh_mail_config(self.cfg.borrow().mail.clone());
+    }
+
     /// Full re-render from the current config: styling, geometry, panels and
     /// scheduler. Safe to call any number of times.
     pub fn apply(&self) {

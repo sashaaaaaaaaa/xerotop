@@ -861,6 +861,19 @@ pub fn set_mail_config(c: crate::config::MailConfig) {
     MAIL_CFG.with(|m| *m.borrow_mut() = c);
 }
 
+/// Live-apply a mail config change *without* rebuilding the panel: store the new
+/// config (the click handler reads `command` from it live) and re-point the
+/// running counter thread at the new dir/interval. Cheap — no graph reset.
+/// No-op for the thread side if the mail panel (and its host) isn't built.
+pub fn refresh_mail_config(c: crate::config::MailConfig) {
+    set_mail_config(c);
+    MAIL_HOST.with(|cell| {
+        if let Some(h) = cell.borrow().as_ref() {
+            let _ = h.req_tx.send(mail_req());
+        }
+    });
+}
+
 fn mail_req() -> crate::mail::MailReq {
     MAIL_CFG.with(|m| {
         let c = m.borrow();
@@ -908,7 +921,6 @@ fn mail_host() -> MailHost {
 /// MAIL: envelope + "unread/total" from a maildir; click runs the configured
 /// command (e.g. open mutt). The whole panel hides when there's no maildir.
 fn mail_panel() -> Panel {
-    let command = MAIL_CFG.with(|m| m.borrow().command.clone());
     let root = panel_box();
     let row = GtkBox::new(Orientation::Horizontal, 6);
     let icon = Label::new(Some("\u{f0e0}")); // envelope
@@ -921,9 +933,14 @@ fn mail_panel() -> Panel {
     row.append(&count);
     root.append(&row);
 
-    // Click anywhere on the row → run the command (detached).
+    // Click anywhere on the row → run the command (detached). Read the command
+    // live from MAIL_CFG so a config edit takes effect without rebuilding the
+    // panel (which would reset graph history elsewhere).
     let click = gtk::GestureClick::new();
-    click.connect_pressed(move |_, _, _, _| spawn(&command));
+    click.connect_pressed(move |_, _, _, _| {
+        let command = MAIL_CFG.with(|m| m.borrow().command.clone());
+        spawn(&command);
+    });
     row.add_controller(click);
 
     let host = mail_host();

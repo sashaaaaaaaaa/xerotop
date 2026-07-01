@@ -561,7 +561,7 @@ fn mail_detail(handle: &BarHandle) -> GtkBox {
     let h = handle.clone();
     dir.connect_changed(move |e| h.cfg.borrow_mut().mail.dir = e.text().to_string());
     let h = handle.clone();
-    dir.connect_activate(move |_| h.apply());
+    dir.connect_activate(move |_| h.apply_mail());
     page.append(&row("Maildir", &dir));
 
     let cmd = Entry::new();
@@ -572,7 +572,13 @@ fn mail_detail(handle: &BarHandle) -> GtkBox {
     let h = handle.clone();
     cmd.connect_changed(move |e| h.cfg.borrow_mut().mail.command = e.text().to_string());
     let h = handle.clone();
-    cmd.connect_activate(move |_| h.apply());
+    cmd.connect_activate(move |_| h.apply_mail());
+    // Also apply on focus-out so clicking away (e.g. straight to "Save")
+    // takes effect, matching the label/weather fields.
+    let focus = gtk::EventControllerFocus::new();
+    let h = handle.clone();
+    focus.connect_leave(move |_| h.apply_mail());
+    cmd.add_controller(focus);
     page.append(&row("Click command", &cmd));
 
     let iv = SpinButton::with_range(1.0, 600.0, 1.0);
@@ -580,7 +586,7 @@ fn mail_detail(handle: &BarHandle) -> GtkBox {
     let h = handle.clone();
     iv.connect_value_changed(move |s| {
         h.cfg.borrow_mut().mail.interval_s = s.value();
-        h.apply();
+        h.apply_mail();
     });
     page.append(&row("Recount every (s)", &iv));
     page
