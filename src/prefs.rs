@@ -279,6 +279,9 @@ fn general_page(handle: &BarHandle) -> GtkBox {
                 };
             }
             h.relayout();
+            // Edge-aware corner radii depend on align + full/fixed length, so
+            // regenerate the CSS too — relayout() alone leaves them stale.
+            h.restyle();
         })
     };
     {
