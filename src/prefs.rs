@@ -1918,6 +1918,12 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
     let grid = Grid::new();
     grid.set_column_spacing(8);
     grid.set_row_spacing(4);
+    grid.set_hexpand(true);
+    // Expanding spacer in column 2 pushes the Font Size / Color columns to the
+    // right edge, away from the checkboxes.
+    let grid_spacer = GtkBox::new(Orientation::Horizontal, 0);
+    grid_spacer.set_hexpand(true);
+    grid.attach(&grid_spacer, 2, 0, 1, 2);
     let host_fs_lbl = Label::new(Some("Font Size:"));
     host_fs_lbl.set_xalign(1.0);
     host_fs_lbl.set_visible(handle.cfg.borrow().panel[i].show_hostname);
@@ -1985,10 +1991,10 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
     }
     grid.attach(&hh, 0, 0, 1, 1);
     grid.attach(&sh, 1, 0, 1, 1);
-    grid.attach(&host_fs_lbl, 2, 0, 1, 1);
-    grid.attach(&host_font, 3, 0, 1, 1);
-    grid.attach(&host_c_lbl, 4, 0, 1, 1);
-    grid.attach(&host_color, 5, 0, 1, 1);
+    grid.attach(&host_fs_lbl, 3, 0, 1, 1);
+    grid.attach(&host_font, 4, 0, 1, 1);
+    grid.attach(&host_c_lbl, 5, 0, 1, 1);
+    grid.attach(&host_color, 6, 0, 1, 1);
 
     // Kernel row: [Show kernel] [format] Font Size:[…] Color:[…]
     let kern_fs_lbl = Label::new(Some("Font Size:"));
@@ -2064,10 +2070,10 @@ fn header_detail(handle: &BarHandle, i: usize) -> GtkBox {
     }
     grid.attach(&hk, 0, 1, 1, 1);
     grid.attach(&kfmt, 1, 1, 1, 1);
-    grid.attach(&kern_fs_lbl, 2, 1, 1, 1);
-    grid.attach(&kern_font, 3, 1, 1, 1);
-    grid.attach(&kern_c_lbl, 4, 1, 1, 1);
-    grid.attach(&kern_color, 5, 1, 1, 1);
+    grid.attach(&kern_fs_lbl, 3, 1, 1, 1);
+    grid.attach(&kern_font, 4, 1, 1, 1);
+    grid.attach(&kern_c_lbl, 5, 1, 1, 1);
+    grid.attach(&kern_color, 6, 1, 1, 1);
     page.append(&grid);
 
     // Host/kernel position relative to the clock (gkrellm put them on top).
