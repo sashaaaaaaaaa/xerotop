@@ -341,6 +341,9 @@ pub fn resolve(name: &str) -> Theme {
         });
     }
     // 3. Built-in default.
+    if name != "default" {
+        eprintln!("xerotop: theme '{name}' not found; using built-in default");
+    }
     Theme::default()
 }
 
